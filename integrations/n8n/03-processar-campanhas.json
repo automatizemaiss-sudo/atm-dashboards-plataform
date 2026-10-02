@@ -1,0 +1,418 @@
+{
+  "name": "FUTPB — Campanhas Uazapi (DESATIVADO)",
+  "nodes": [
+    {
+      "id": "Teste manual",
+      "name": "Teste manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "parameters": {},
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "A cada 30 segundos",
+      "name": "A cada 30 segundos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "seconds",
+              "secondsInterval": 30
+            }
+          ]
+        }
+      },
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "Configuração — manter desativado",
+      "name": "Configuração — manter desativado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const enabled=false;\nconst apiUrl=''; // Preencher amanhã com Server URL real.\nif(!enabled) throw new Error('Envios desativados. Configurar instância e revisar o fluxo antes de habilitar.');\nif(!/^https:\\/\\//.test(apiUrl)) throw new Error('Server URL HTTPS obrigatória.');\nreturn [{json:{apiUrl:apiUrl.replace(/\\/$/,'')}}];"
+      },
+      "position": [
+        180,
+        0
+      ]
+    },
+    {
+      "id": "Reservar mensagem",
+      "name": "Reservar mensagem",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://wlhugaduwhevmoymyhad.supabase.co/rest/v1/rpc/claim_whatsapp_dispatch",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "position": [
+        380,
+        0
+      ]
+    },
+    {
+      "id": "Há mensagem?",
+      "name": "Há mensagem?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Há mensagem?",
+              "leftValue": "={{ $json.available }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "position": [
+        580,
+        0
+      ]
+    },
+    {
+      "id": "É texto?",
+      "name": "É texto?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "É texto?",
+              "leftValue": "={{ $('Reservar mensagem').first().json.kind === 'text' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "position": [
+        780,
+        0
+      ]
+    },
+    {
+      "id": "Assinar mídia privada",
+      "name": "Assinar mídia privada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://wlhugaduwhevmoymyhad.supabase.co/storage/v1/object/sign/campaign-media/' + $('Reservar mensagem').first().json.storage_path.split('/').map(encodeURIComponent).join('/') }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"expiresIn\":300}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "position": [
+        980,
+        0
+      ]
+    },
+    {
+      "id": "Montar mensagem",
+      "name": "Montar mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const task=$('Reservar mensagem').first().json;const configuration=$('Configuração — manter desativado').first().json;let body={number:task.number,track_source:'futpb-dashboard',track_id:task.dispatch_id,async:false};if(task.kind==='text')body.text=task.text;else{const signed=$input.first().json.signedURL;if(typeof signed!=='string')throw new Error('Storage não retornou URL assinada.');body={...body,type:task.kind,file:'https://wlhugaduwhevmoymyhad.supabase.co/storage/v1'+signed,text:task.text};}return [{json:{url:configuration.apiUrl+(task.kind==='text'?'/send/text':'/send/media'),body}}];"
+      },
+      "position": [
+        1180,
+        0
+      ]
+    },
+    {
+      "id": "Revalidar permissão e campanha",
+      "name": "Revalidar permissão e campanha",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://wlhugaduwhevmoymyhad.supabase.co/rest/v1/rpc/authorize_whatsapp_dispatch",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({dispatch_id:$('Reservar mensagem').first().json.dispatch_id}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "position": [
+        1380,
+        0
+      ]
+    },
+    {
+      "id": "Pode enviar?",
+      "name": "Pode enviar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "Pode enviar?",
+              "leftValue": "={{ $json.allowed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "position": [
+        1580,
+        0
+      ]
+    },
+    {
+      "id": "Enviar Uazapi — sem retry",
+      "name": "Enviar Uazapi — sem retry",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Montar mensagem').first().json.url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Montar mensagem').first().json.body) }}",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "position": [
+        1780,
+        0
+      ]
+    },
+    {
+      "id": "Registrar retorno da API",
+      "name": "Registrar retorno da API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://wlhugaduwhevmoymyhad.supabase.co/rest/v1/rpc/finish_whatsapp_dispatch",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({dispatch_id:$('Reservar mensagem').first().json.dispatch_id,result:$json}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "position": [
+        1980,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Teste manual": {
+      "main": [
+        [
+          {
+            "node": "Configuração — manter desativado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A cada 30 segundos": {
+      "main": [
+        [
+          {
+            "node": "Configuração — manter desativado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuração — manter desativado": {
+      "main": [
+        [
+          {
+            "node": "Reservar mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reservar mensagem": {
+      "main": [
+        [
+          {
+            "node": "Há mensagem?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Há mensagem?": {
+      "main": [
+        [
+          {
+            "node": "É texto?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É texto?": {
+      "main": [
+        [
+          {
+            "node": "Montar mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Assinar mídia privada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assinar mídia privada": {
+      "main": [
+        [
+          {
+            "node": "Montar mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar mensagem": {
+      "main": [
+        [
+          {
+            "node": "Revalidar permissão e campanha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Revalidar permissão e campanha": {
+      "main": [
+        [
+          {
+            "node": "Pode enviar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pode enviar?": {
+      "main": [
+        [
+          {
+            "node": "Enviar Uazapi — sem retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Uazapi — sem retry": {
+      "main": [
+        [
+          {
+            "node": "Registrar retorno da API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "executionTimeout": 120,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none"
+  }
+}

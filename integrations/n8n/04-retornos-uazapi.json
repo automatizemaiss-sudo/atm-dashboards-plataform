@@ -1,0 +1,63 @@
+{
+  "name": "FUTPB — Retornos Uazapi (DESATIVADO)",
+  "nodes": [
+    {
+      "id": "webhook",
+      "name": "Receber Uazapi",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "futpb-uazapi",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "ingest",
+      "name": "Validar e registrar evento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://wlhugaduwhevmoymyhad.supabase.co/rest/v1/rpc/ingest_uazapi_webhook",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({payload:$json.body}) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "position": [
+        300,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Receber Uazapi": {
+      "main": [
+        [
+          {
+            "node": "Validar e registrar evento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveExecutionProgress": false
+  }
+}

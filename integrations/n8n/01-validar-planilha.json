@@ -1,0 +1,83 @@
+{
+  "name": "FUTPB — 01 Leitura e validação da planilha",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual",
+      "name": "Executar teste manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1ugjC_pxX2MqC5_5e_gBOTagv_kN-3ZuN2tffQ8Mb3CI",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Página1",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "sheets",
+      "name": "Ler Página1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        240,
+        0
+      ],
+      "notes": "Selecione a credencial Google Sheets. Se o seletor de aba não aceitar o nome, escolha Página1 na lista. Somente leitura."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Used by the n8n Code node. Read-only: no API calls or writes.\nfunction booleanValue(value, label) {\n  const normalized=String(value ?? '').trim().toLowerCase();\n  if(!normalized)return null;\n  if(['sim','s','true','1','yes'].includes(normalized))return true;\n  if(['não','nao','n','false','0','no'].includes(normalized))return false;\n  throw new Error(`${label}: use Sim, Não ou vazio.`);\n}\nfunction birthdayValue(value) {\n  const v=String(value??'').trim();\n  if(!v)return null;\n  let year,month,day;\n  let match=/^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(v);\n  if(match){year=+match[1];month=+match[2];day=+match[3];}\n  else {match=/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})$/.exec(v);if(!match)throw new Error('Data de aniversário: use DD/MM/AAAA ou AAAA-MM-DD.');day=+match[1];month=+match[2];year=+match[3];}\n  if(year<1900||year>new Date().getUTCFullYear())throw new Error('Ano de aniversário inválido.');\n  const date=new Date(Date.UTC(year,month-1,day));\n  if(date.getUTCFullYear()!==year||date.getUTCMonth()!==month-1||date.getUTCDate()!==day||date>new Date())throw new Error('Data de aniversário inválida.');\n  return date.toISOString().slice(0,10);\n}\nfunction normalizeRow(row){\n  const name=String(row['Nome Completo']??'').trim();\n  if(!name)throw new Error('Nome Completo obrigatório.');\n  let phone=String(row.Telefone??'').replace(/\\D/g,'');\n  if(phone.length===10||phone.length===11)phone='55'+phone;\n  if(!/^55\\d{10,11}$/.test(phone))throw new Error('Telefone inválido: use DDD e número.');\n  const teams=[...new Set(String(row['Time(s)']??'').split(/[;,\\n]/).map(t=>t.trim()).filter(Boolean))];\n  return {customer:{name,phone:'+'+phone,size:String(row.Tamanho??'').trim()||null,desired_shirt:String(row['Camisa Desejado Sorteio']??row['Camisa Preferida']??'').trim()||null,birthday:birthdayValue(row['Data de aniversário']??row.Data),has_purchased:booleanValue(row['Já comprou?'],'Já comprou?'),can_receive_campaigns:booleanValue(row['Aceita Mensagens?'],'Aceita Mensagens?'),last_update_source:'google_sheets'},teams,can_send:booleanValue(row['Aceita Mensagens?'],'Aceita Mensagens?')!==false};\n}\nfunction validateRows(rows){\n const seen=new Set();\n return rows.map((row,index)=>{\n  try{const result=normalizeRow(row);if(seen.has(result.customer.phone))throw new Error('Telefone duplicado nesta leitura.');seen.add(result.customer.phone);return {json:{valid:true,source_row:row.row_number??index+2,...result}};}\n  catch(error){return {json:{valid:false,source_row:row.row_number??index+2,error:error.message}};}\n });\n}\nreturn validateRows($input.all().map(item=>item.json));\n"
+      },
+      "id": "validate",
+      "name": "Validar sem gravar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        0
+      ],
+      "notes": "Somente validação, sem gravações. Data é aniversário; Camisa Preferida é a camiseta desejada no sorteio."
+    }
+  ],
+  "connections": {
+    "Executar teste manual": {
+      "main": [
+        [
+          {
+            "node": "Ler Página1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler Página1": {
+      "main": [
+        [
+          {
+            "node": "Validar sem gravar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

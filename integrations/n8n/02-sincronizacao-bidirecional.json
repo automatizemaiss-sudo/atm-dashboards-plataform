@@ -1,0 +1,380 @@
+{
+  "name": "FUTPB — Sheets ↔ Supabase com reconciliação",
+  "nodes": [
+    {
+      "id": "Teste manual",
+      "name": "Teste manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "parameters": {},
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "A cada minuto",
+      "name": "A cada minuto",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "Reservar sincronização",
+      "name": "Reservar sincronização",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://wlhugaduwhevmoymyhad.supabase.co/rest/v1/rpc/sheet_sync_begin",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "id": "Ler planilha",
+      "name": "Ler planilha",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "GET",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1ugjC_pxX2MqC5_5e_gBOTagv_kN-3ZuN2tffQ8Mb3CI/values/'P%C3%A1gina1'!A1%3AO10001?valueRenderOption=FORMATTED_VALUE",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "id": "Validar leitura",
+      "name": "Validar leitura",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "// Used by the n8n Code node. Read-only: no API calls or writes.\nfunction booleanValue(value, label) {\n  const normalized=String(value ?? '').trim().toLowerCase();\n  if(!normalized)return null;\n  if(['sim','s','true','1','yes'].includes(normalized))return true;\n  if(['não','nao','n','false','0','no'].includes(normalized))return false;\n  throw new Error(`${label}: use Sim, Não ou vazio.`);\n}\nfunction birthdayValue(value) {\n  const v=String(value??'').trim();\n  if(!v)return null;\n  let year,month,day;\n  let match=/^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(v);\n  if(match){year=+match[1];month=+match[2];day=+match[3];}\n  else {match=/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})$/.exec(v);if(!match)throw new Error('Data de aniversário: use DD/MM/AAAA ou AAAA-MM-DD.');day=+match[1];month=+match[2];year=+match[3];}\n  if(year<1900||year>new Date().getUTCFullYear())throw new Error('Ano de aniversário inválido.');\n  const date=new Date(Date.UTC(year,month-1,day));\n  if(date.getUTCFullYear()!==year||date.getUTCMonth()!==month-1||date.getUTCDate()!==day||date>new Date())throw new Error('Data de aniversário inválida.');\n  return date.toISOString().slice(0,10);\n}\nfunction normalizeRow(row){\n  const name=String(row['Nome Completo']??'').trim();\n  if(!name)throw new Error('Nome Completo obrigatório.');\n  let phone=String(row.Telefone??'').replace(/\\D/g,'');\n  if(phone.length===10||phone.length===11)phone='55'+phone;\n  if(!/^55\\d{10,11}$/.test(phone))throw new Error('Telefone inválido: use DDD e número.');\n  const teams=[...new Set(String(row['Time(s)']??'').split(/[;,\\n]/).map(t=>t.trim()).filter(Boolean))];\n  return {customer:{name,phone:'+'+phone,size:String(row.Tamanho??'').trim()||null,desired_shirt:String(row['Camisa Desejado Sorteio']??row['Camisa Preferida']??'').trim()||null,birthday:birthdayValue(row['Data de aniversário']??row.Data),has_purchased:booleanValue(row['Já comprou?'],'Já comprou?'),can_receive_campaigns:booleanValue(row['Aceita Mensagens?'],'Aceita Mensagens?'),last_update_source:'google_sheets'},teams,can_send:booleanValue(row['Aceita Mensagens?'],'Aceita Mensagens?')!==false};\n}\nfunction validateRows(rows){\n const seen=new Set();\n return rows.map((row,index)=>{\n  try{const result=normalizeRow(row);if(seen.has(result.customer.phone))throw new Error('Telefone duplicado nesta leitura.');seen.add(result.customer.phone);return {json:{valid:true,source_row:row.row_number??index+2,...result}};}\n  catch(error){return {json:{valid:false,source_row:row.row_number??index+2,error:error.message}};}\n });\n}\n\n\n// Included in Code nodes by generate-sync.cjs. No credentials in this module.\nconst HEADERS=['Nome Completo','Telefone','Camisa Desejado Sorteio','Time(s)','Tamanho','Data de aniversário','Já comprou?','Aceita Mensagens?','ID Cliente','Versão Sync','Possui Indicações?','Total Comprado','Número de Pedidos','Última Compra','Excluído?'];\nfunction numeric(value,integer=false){\n const raw=String(value??'').trim(); if(!raw)return null;\n const normalized=raw.includes(',')?raw.replace(/\\./g,'').replace(',','.'):raw;\n const n=Number(normalized);if(!Number.isFinite(n)||n<0||(integer&&!Number.isInteger(n)))throw new Error('Valor de compra/pedidos inválido.');return n;\n}\nfunction purchaseDate(value){const v=String(value??'').trim();if(!v)return null;return birthdayValue(v);}\nfunction parseGrid(grid){\n if(!Array.isArray(grid)||!grid.length)throw new Error('Planilha sem cabeçalhos.');\n const headerNames=grid[0].slice(0,15).map(h=>String(h).trim());\n headerNames[2]=headerNames[2]==='Camisa Preferida'?'Camisa Desejado Sorteio':headerNames[2];\n headerNames[5]=headerNames[5]==='Data'?'Data de aniversário':headerNames[5];\n if(headerNames.join('|')!==HEADERS.join('|'))throw new Error('Cabeçalhos diferentes. Confira A1:O1 no guia de sincronização.');\n if(grid.length>=10001)throw new Error('Limite de leitura atingido; ampliar/paginar antes de sincronizar.');\n const phones=new Set(),ids=new Set();\n return grid.slice(1).flatMap((cells,index)=>{\n  if(!cells.some(v=>String(v??'').trim()))return [];\n  const row=Object.fromEntries(HEADERS.map((h,i)=>[h,cells[i]??'']));\n  let normalized;try{normalized=normalizeRow(row)}catch(e){throw new Error(`Linha ${index+2}: ${e.message}`)}\n  const value={...normalized.customer,archived:booleanValue(row['Excluído?'],'Excluído?')===true,has_referrals:booleanValue(row['Possui Indicações?'],'Possui Indicações?'),total_spent:numeric(row['Total Comprado']),order_count:numeric(row['Número de Pedidos'],true),last_purchase_at:purchaseDate(row['Última Compra']),teams:normalized.teams.sort()};delete value.last_update_source;\n  const id=String(row['ID Cliente']).trim();\n  if(id&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))throw new Error(`Linha ${index+2}: ID Cliente inválido.`);\n  if(phones.has(value.phone))throw new Error(`Telefone duplicado na linha ${index+2}.`);phones.add(value.phone);\n  if(id&&ids.has(id))throw new Error(`ID Cliente duplicado na linha ${index+2}.`);if(id)ids.add(id);\n  return [{customer_id:id||null,row_number:index+2,value,cells}];\n });\n}\nfunction stable(value){if(Array.isArray(value))return JSON.stringify(value);if(value&&typeof value==='object')return JSON.stringify(Object.fromEntries(Object.keys(value).sort().map(k=>[k,value[k]])));return JSON.stringify(value);}\nfunction booleanCell(v){return v===null?'':v?'Sim':'Não';}\nfunction sheetCells(w){const v=w.value;return [v.name,v.phone,v.desired_shirt??'',(v.teams??[]).join('; '),v.size??'',v.birthday??'',booleanCell(v.has_purchased),booleanCell(v.can_receive_campaigns),w.customer_id,String(w.version),booleanCell(v.has_referrals),v.total_spent??'',v.order_count??'',v.last_purchase_at??'',booleanCell(v.archived??false)];}\nfunction guardedWrites(plan,grid){\n const latest=parseGrid(grid),data=[];let nextRow=grid.length+1;\n for(const w of plan.writes){\n  let matches=latest.filter(r=>r.customer_id===w.customer_id);\n  if(!matches.length&&w.expected!==null)matches=latest.filter(r=>!r.customer_id&&r.value.phone===w.expected.phone);\n  if(matches.length>1)throw new Error('Identidade duplicada antes da gravação.');\n  const existing=matches[0];\n  if(w.expected===null){if(existing){if(stable(existing.value)!==stable(w.value))throw new Error('Linha criada durante o processamento; executar novamente.');}else if(latest.some(r=>r.value.phone===w.value.phone))throw new Error('Telefone apareceu na planilha durante o processamento; executar novamente.');}\n  else if(!existing||stable(existing.value)!==stable(w.expected))throw new Error('Planilha alterada durante o processamento; nenhuma gravação foi preparada. Aguarde o lease expirar e execute novamente.');\n  const values=sheetCells(w),row=existing?.row_number??nextRow++;\n  if(!existing||stable(values)!==stable(HEADERS.map((_,i)=>existing.cells[i]??'')))data.push({range:`'Página1'!A${row}:O${row}`,values:[values]});\n }\n return {run_id:plan.run_id,has_writes:data.length>0,body:{valueInputOption:'RAW',data},conflicts:plan.conflicts};\n}\n\n\nreturn [{json:{run_id:$('Reservar sincronização').first().json.run_id,rows:parseGrid($input.first().json.values)}}];"
+      },
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "id": "Reconciliar no Supabase",
+      "name": "Reconciliar no Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://wlhugaduwhevmoymyhad.supabase.co/rest/v1/rpc/sheet_sync_plan",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({run_id:$json.run_id,rows:$json.rows.map(({cells,row_number,...r})=>r)}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "id": "Reler antes de gravar",
+      "name": "Reler antes de gravar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "GET",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1ugjC_pxX2MqC5_5e_gBOTagv_kN-3ZuN2tffQ8Mb3CI/values/'P%C3%A1gina1'!A1%3AO10001?valueRenderOption=FORMATTED_VALUE",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "position": [
+        1100,
+        0
+      ]
+    },
+    {
+      "id": "Conferir alterações concorrentes",
+      "name": "Conferir alterações concorrentes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "// Used by the n8n Code node. Read-only: no API calls or writes.\nfunction booleanValue(value, label) {\n  const normalized=String(value ?? '').trim().toLowerCase();\n  if(!normalized)return null;\n  if(['sim','s','true','1','yes'].includes(normalized))return true;\n  if(['não','nao','n','false','0','no'].includes(normalized))return false;\n  throw new Error(`${label}: use Sim, Não ou vazio.`);\n}\nfunction birthdayValue(value) {\n  const v=String(value??'').trim();\n  if(!v)return null;\n  let year,month,day;\n  let match=/^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(v);\n  if(match){year=+match[1];month=+match[2];day=+match[3];}\n  else {match=/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})$/.exec(v);if(!match)throw new Error('Data de aniversário: use DD/MM/AAAA ou AAAA-MM-DD.');day=+match[1];month=+match[2];year=+match[3];}\n  if(year<1900||year>new Date().getUTCFullYear())throw new Error('Ano de aniversário inválido.');\n  const date=new Date(Date.UTC(year,month-1,day));\n  if(date.getUTCFullYear()!==year||date.getUTCMonth()!==month-1||date.getUTCDate()!==day||date>new Date())throw new Error('Data de aniversário inválida.');\n  return date.toISOString().slice(0,10);\n}\nfunction normalizeRow(row){\n  const name=String(row['Nome Completo']??'').trim();\n  if(!name)throw new Error('Nome Completo obrigatório.');\n  let phone=String(row.Telefone??'').replace(/\\D/g,'');\n  if(phone.length===10||phone.length===11)phone='55'+phone;\n  if(!/^55\\d{10,11}$/.test(phone))throw new Error('Telefone inválido: use DDD e número.');\n  const teams=[...new Set(String(row['Time(s)']??'').split(/[;,\\n]/).map(t=>t.trim()).filter(Boolean))];\n  return {customer:{name,phone:'+'+phone,size:String(row.Tamanho??'').trim()||null,desired_shirt:String(row['Camisa Desejado Sorteio']??row['Camisa Preferida']??'').trim()||null,birthday:birthdayValue(row['Data de aniversário']??row.Data),has_purchased:booleanValue(row['Já comprou?'],'Já comprou?'),can_receive_campaigns:booleanValue(row['Aceita Mensagens?'],'Aceita Mensagens?'),last_update_source:'google_sheets'},teams,can_send:booleanValue(row['Aceita Mensagens?'],'Aceita Mensagens?')!==false};\n}\nfunction validateRows(rows){\n const seen=new Set();\n return rows.map((row,index)=>{\n  try{const result=normalizeRow(row);if(seen.has(result.customer.phone))throw new Error('Telefone duplicado nesta leitura.');seen.add(result.customer.phone);return {json:{valid:true,source_row:row.row_number??index+2,...result}};}\n  catch(error){return {json:{valid:false,source_row:row.row_number??index+2,error:error.message}};}\n });\n}\n\n\n// Included in Code nodes by generate-sync.cjs. No credentials in this module.\nconst HEADERS=['Nome Completo','Telefone','Camisa Desejado Sorteio','Time(s)','Tamanho','Data de aniversário','Já comprou?','Aceita Mensagens?','ID Cliente','Versão Sync','Possui Indicações?','Total Comprado','Número de Pedidos','Última Compra','Excluído?'];\nfunction numeric(value,integer=false){\n const raw=String(value??'').trim(); if(!raw)return null;\n const normalized=raw.includes(',')?raw.replace(/\\./g,'').replace(',','.'):raw;\n const n=Number(normalized);if(!Number.isFinite(n)||n<0||(integer&&!Number.isInteger(n)))throw new Error('Valor de compra/pedidos inválido.');return n;\n}\nfunction purchaseDate(value){const v=String(value??'').trim();if(!v)return null;return birthdayValue(v);}\nfunction parseGrid(grid){\n if(!Array.isArray(grid)||!grid.length)throw new Error('Planilha sem cabeçalhos.');\n const headerNames=grid[0].slice(0,15).map(h=>String(h).trim());\n headerNames[2]=headerNames[2]==='Camisa Preferida'?'Camisa Desejado Sorteio':headerNames[2];\n headerNames[5]=headerNames[5]==='Data'?'Data de aniversário':headerNames[5];\n if(headerNames.join('|')!==HEADERS.join('|'))throw new Error('Cabeçalhos diferentes. Confira A1:O1 no guia de sincronização.');\n if(grid.length>=10001)throw new Error('Limite de leitura atingido; ampliar/paginar antes de sincronizar.');\n const phones=new Set(),ids=new Set();\n return grid.slice(1).flatMap((cells,index)=>{\n  if(!cells.some(v=>String(v??'').trim()))return [];\n  const row=Object.fromEntries(HEADERS.map((h,i)=>[h,cells[i]??'']));\n  let normalized;try{normalized=normalizeRow(row)}catch(e){throw new Error(`Linha ${index+2}: ${e.message}`)}\n  const value={...normalized.customer,archived:booleanValue(row['Excluído?'],'Excluído?')===true,has_referrals:booleanValue(row['Possui Indicações?'],'Possui Indicações?'),total_spent:numeric(row['Total Comprado']),order_count:numeric(row['Número de Pedidos'],true),last_purchase_at:purchaseDate(row['Última Compra']),teams:normalized.teams.sort()};delete value.last_update_source;\n  const id=String(row['ID Cliente']).trim();\n  if(id&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))throw new Error(`Linha ${index+2}: ID Cliente inválido.`);\n  if(phones.has(value.phone))throw new Error(`Telefone duplicado na linha ${index+2}.`);phones.add(value.phone);\n  if(id&&ids.has(id))throw new Error(`ID Cliente duplicado na linha ${index+2}.`);if(id)ids.add(id);\n  return [{customer_id:id||null,row_number:index+2,value,cells}];\n });\n}\nfunction stable(value){if(Array.isArray(value))return JSON.stringify(value);if(value&&typeof value==='object')return JSON.stringify(Object.fromEntries(Object.keys(value).sort().map(k=>[k,value[k]])));return JSON.stringify(value);}\nfunction booleanCell(v){return v===null?'':v?'Sim':'Não';}\nfunction sheetCells(w){const v=w.value;return [v.name,v.phone,v.desired_shirt??'',(v.teams??[]).join('; '),v.size??'',v.birthday??'',booleanCell(v.has_purchased),booleanCell(v.can_receive_campaigns),w.customer_id,String(w.version),booleanCell(v.has_referrals),v.total_spent??'',v.order_count??'',v.last_purchase_at??'',booleanCell(v.archived??false)];}\nfunction guardedWrites(plan,grid){\n const latest=parseGrid(grid),data=[];let nextRow=grid.length+1;\n for(const w of plan.writes){\n  let matches=latest.filter(r=>r.customer_id===w.customer_id);\n  if(!matches.length&&w.expected!==null)matches=latest.filter(r=>!r.customer_id&&r.value.phone===w.expected.phone);\n  if(matches.length>1)throw new Error('Identidade duplicada antes da gravação.');\n  const existing=matches[0];\n  if(w.expected===null){if(existing){if(stable(existing.value)!==stable(w.value))throw new Error('Linha criada durante o processamento; executar novamente.');}else if(latest.some(r=>r.value.phone===w.value.phone))throw new Error('Telefone apareceu na planilha durante o processamento; executar novamente.');}\n  else if(!existing||stable(existing.value)!==stable(w.expected))throw new Error('Planilha alterada durante o processamento; nenhuma gravação foi preparada. Aguarde o lease expirar e execute novamente.');\n  const values=sheetCells(w),row=existing?.row_number??nextRow++;\n  if(!existing||stable(values)!==stable(HEADERS.map((_,i)=>existing.cells[i]??'')))data.push({range:`'Página1'!A${row}:O${row}`,values:[values]});\n }\n return {run_id:plan.run_id,has_writes:data.length>0,body:{valueInputOption:'RAW',data},conflicts:plan.conflicts};\n}\n\n\nreturn [{json:guardedWrites($('Reconciliar no Supabase').first().json,$input.first().json.values)}];"
+      },
+      "position": [
+        1320,
+        0
+      ]
+    },
+    {
+      "id": "Validar reserva antes da escrita",
+      "name": "Validar reserva antes da escrita",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://wlhugaduwhevmoymyhad.supabase.co/rest/v1/rpc/sheet_sync_validate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({run_id:$('Conferir alterações concorrentes').first().json.run_id}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "position": [
+        1430,
+        0
+      ]
+    },
+    {
+      "id": "Há gravações?",
+      "name": "Há gravações?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "writes",
+              "leftValue": "={{ $('Conferir alterações concorrentes').first().json.has_writes }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "position": [
+        1540,
+        0
+      ]
+    },
+    {
+      "id": "Atualizar planilha",
+      "name": "Atualizar planilha",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1ugjC_pxX2MqC5_5e_gBOTagv_kN-3ZuN2tffQ8Mb3CI/values:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Conferir alterações concorrentes').first().json.body) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "position": [
+        1760,
+        0
+      ]
+    },
+    {
+      "id": "Confirmar sincronização",
+      "name": "Confirmar sincronização",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://wlhugaduwhevmoymyhad.supabase.co/rest/v1/rpc/sheet_sync_ack",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({run_id:$('Conferir alterações concorrentes').first().json.run_id}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "position": [
+        1980,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Teste manual": {
+      "main": [
+        [
+          {
+            "node": "Reservar sincronização",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A cada minuto": {
+      "main": [
+        [
+          {
+            "node": "Reservar sincronização",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reservar sincronização": {
+      "main": [
+        [
+          {
+            "node": "Ler planilha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler planilha": {
+      "main": [
+        [
+          {
+            "node": "Validar leitura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar leitura": {
+      "main": [
+        [
+          {
+            "node": "Reconciliar no Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reconciliar no Supabase": {
+      "main": [
+        [
+          {
+            "node": "Reler antes de gravar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reler antes de gravar": {
+      "main": [
+        [
+          {
+            "node": "Conferir alterações concorrentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conferir alterações concorrentes": {
+      "main": [
+        [
+          {
+            "node": "Validar reserva antes da escrita",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar reserva antes da escrita": {
+      "main": [
+        [
+          {
+            "node": "Há gravações?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Há gravações?": {
+      "main": [
+        [
+          {
+            "node": "Atualizar planilha",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Confirmar sincronização",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualizar planilha": {
+      "main": [
+        [
+          {
+            "node": "Confirmar sincronização",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "executionTimeout": 120
+  },
+  "active": false
+}
