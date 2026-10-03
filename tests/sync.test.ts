@@ -13,7 +13,7 @@ const row=['Teste','(83) 99999-1111','Barcelona Home','Corinthians; Barcelona','
 test('guarda de planilha detecta edição e mantém IDs ao trocar ordem',()=>{
  const parsed=parseGrid([HEADERS,row]);const id='11111111-1111-1111-1111-111111111111';
  const plan={run_id:id,writes:[{customer_id:id,original_id:null,expected:parsed[0].value,value:parsed[0].value,version:1}],conflicts:[]};
- const write=guardedWrites(plan,[HEADERS,[],row]);assert.equal(write.body.data[0].range,"'Página1'!A3:O3");assert.equal(write.body.data[0].values[0][8],id);
+ const write=guardedWrites(plan,[HEADERS,[],row]);assert.equal(write.body.data[0].range,"'Página1'!A3:P3");assert.equal(write.body.data[0].values[0][8],id);
  assert.throws(()=>guardedWrites(plan,[HEADERS,['Outro nome',...row.slice(1)]]));
  assert.throws(()=>parseGrid([HEADERS,row,row]));
 });
@@ -21,7 +21,7 @@ test('reconciliação idempotente, merges, conflito e retentativa após perda de
  const db=new PGlite();
  try{
  await db.exec(`create role anon; create role authenticated; create role service_role; create schema auth; create table auth.users(id uuid primary key,email text); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$; create schema storage; create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]); create table storage.objects(id uuid,bucket_id text,name text); alter table storage.objects enable row level security; create function storage.foldername(name text) returns text[] language sql as $$ select string_to_array(name,'/') $$;`);
- for(const file of ['001_initial.sql','002_campaign_functions.sql','003_sheet_sync.sql','004_customer_tools.sql','005_campaign_worker.sql','006_archive_customers.sql'])await db.exec(readFileSync('supabase/migrations/'+file,'utf8').replace('create extension if not exists pgcrypto;',''));
+ for(const file of ['001_initial.sql','002_campaign_functions.sql','003_sheet_sync.sql','004_customer_tools.sql','005_campaign_worker.sql','006_archive_customers.sql','007_contact_interests.sql'])await db.exec(readFileSync('supabase/migrations/'+file,'utf8').replace('create extension if not exists pgcrypto;',''));
  const org=(await db.query<{id:string}>("select id from organizations where slug='futpb'")).rows[0].id;
  async function begin(){return (await db.query<{result:{run_id:string}}>('select sheet_sync_begin() result')).rows[0].result.run_id}
  async function plan(token:string,rows:any[]){return (await db.query<{result:any}>('select sheet_sync_plan($1,$2::jsonb) result',[token,JSON.stringify(rows)])).rows[0].result}
@@ -55,7 +55,14 @@ test('reconciliação idempotente, merges, conflito e retentativa após perda de
  await db.exec("insert into auth.users values('11111111-1111-1111-1111-111111111111','owner@example.test'); insert into organization_users select id,'11111111-1111-1111-1111-111111111111' from organizations where slug='futpb'; grant usage on schema public,auth to authenticated; grant select,insert,update,delete on all tables in schema public to authenticated; set request.jwt.claim.sub='11111111-1111-1111-1111-111111111111'; set role authenticated");
  const full=(await db.query<{v:any}>('select sync_customer_value($1) v',[id])).rows[0].v;
  const version=Number((await db.query<{v:number}>('select version v from customers where id=$1',[id])).rows[0].v);
- await db.query('select save_customer($1,$2,$3,$4,$5)',[org,id,version,JSON.stringify(full),JSON.stringify(['Milan','Barcelona'])]);
+ await db.query('select save_customer($1,$2,$3,$4,$5)',[org,id,version,JSON.stringify({...full,shirt_types:['Jogador','Retrô']}),JSON.stringify(['Milan','Barcelona'])]);
+ const interestRules={operator:'and',conditions:[{field:'shirt_type',op:'eq',value:'Retrô'},{field:'team',op:'eq',value:'Milan'}]};
+ const audience=(await db.query<{r:any}>("select browse_contacts($1,rules=>$2::jsonb) r",[org,JSON.stringify(interestRules)])).rows[0].r;
+ assert.equal(Number(audience.total),1);assert.equal(audience.rows[0].id,id);
+ const absent=(await db.query<{r:any}>("select browse_contacts($1,rules=>$2::jsonb) r",[org,JSON.stringify({operator:'and',conditions:[{field:'shirt_type',op:'eq',value:'Torcedor'}]})])).rows[0].r;
+ assert.equal(Number(absent.total),0);
+ assert.deepEqual((await db.query<{v:any}>('select sync_customer_value($1) v',[id])).rows[0].v.shirt_types,['Jogador','Retrô']);
+ await assert.rejects(db.query("update customers set shirt_types=array['Inválido'] where id=$1",[id]));
  await assert.rejects(db.query('select save_customer($1,$2,$3,$4,$5)',[org,id,version,JSON.stringify(full),'[]']));
  const updatedVersion=Number((await db.query<{v:number}>('select version v from customers where id=$1',[id])).rows[0].v);
  await db.query('select set_customer_archived($1,true,$2)',[id,updatedVersion]);

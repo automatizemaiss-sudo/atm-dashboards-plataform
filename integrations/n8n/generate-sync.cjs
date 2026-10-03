@@ -4,7 +4,7 @@ const sync=fs.readFileSync('integrations/n8n/sync-sheet.cjs','utf8').replace(/mo
 const shared=validation+'\n'+sync+'\n';
 const sheet='1ugjC_pxX2MqC5_5e_gBOTagv_kN-3ZuN2tffQ8Mb3CI';
 const base='https://wlhugaduwhevmoymyhad.supabase.co/rest/v1/rpc/';
-const readUrl=`https://sheets.googleapis.com/v4/spreadsheets/${sheet}/values/`+encodeURIComponent("'Página1'!A1:O10001")+'?valueRenderOption=FORMATTED_VALUE';
+const readUrl=`https://sheets.googleapis.com/v4/spreadsheets/${sheet}/values/`+encodeURIComponent("'Página1'!A1:P10001")+'?valueRenderOption=FORMATTED_VALUE';
 const nodes=[],connections={};
 function add(name,type,parameters,x,version=1){nodes.push({id:name,name,type:'n8n-nodes-base.'+type,typeVersion:version,parameters,position:[x,0]});return name;}
 function connect(a,b,branch=0){connections[a]??={main:[]};connections[a].main[branch]??=[];connections[a].main[branch].push({node:b,type:'main',index:0});}
