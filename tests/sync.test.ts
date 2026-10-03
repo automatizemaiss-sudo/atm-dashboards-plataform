@@ -118,3 +118,11 @@ test('fluxos de campanhas ficam desativados e bloqueiam envio sem configuração
   if(file.startsWith('03')){const guard=flow.nodes.find((n:any)=>n.name.startsWith('Configuração'));assert.throws(()=>new Function(guard.parameters.jsCode)(),/Envios desativados/);}
  }
 });
+
+test('tipos de camisa aceitam Feminina e normalizam caixa, acentos e espaços',()=>{
+ const cells=[...row];cells[15]=' feminina ; JOGADOR, Retro';
+ assert.deepEqual(parseGrid([HEADERS,cells])[0].value.shirt_types,['Feminina','Jogador','Retrô']);
+ cells[15]='Infantil';assert.throws(()=>parseGrid([HEADERS,cells]),/Use Jogador, Torcedor, Retrô ou Feminina/);
+ const flow=JSON.parse(readFileSync('integrations/n8n/02-sincronizacao-bidirecional.json','utf8'));
+ for(const name of ['Validar leitura','Conferir alterações concorrentes'])assert.ok(flow.nodes.find((n:any)=>n.name===name).parameters.jsCode.includes("feminina:'Feminina'"));
+});
