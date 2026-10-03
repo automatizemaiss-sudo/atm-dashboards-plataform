@@ -6,7 +6,7 @@
 2. A aba Vendas já foi criada na planilha_dashboard, sem alterar Página1.
 3. Importe `integrations/n8n/05-sincronizacao-vendas.json`. Selecione as credenciais Supabase API e Google Sheets OAuth2 nos respectivos nós. Execute manualmente; confira ida e volta antes de ativar o agendamento de um minuto. O fluxo de contatos continua independente.
 4. Para o formulário, configure no servidor/Vercel a variável `SUPABASE_SERVICE_ROLE_KEY`, com a credencial privada do Supabase. Não use prefixo NEXT_PUBLIC e não comite a chave. As variáveis públicas de URL/publishable já existentes continuam necessárias.
-5. Faça deploy na Vercel. O formulário está em `/sorteio`, sem exigir login; o cadastro de vendas está dentro de Campanhas. Sem a chave privada o formulário exibe inscrições indisponíveis ao enviar, sem gravar dados.
+5. Faça deploy na Vercel. O formulário está em `/sorteio`, sem exigir login; o cadastro de vendas está na aba Vendas do menu lateral, também acessível pelo botão Registrar vendas em Campanhas. Sem a chave privada o formulário exibe inscrições indisponíveis ao enviar, sem gravar dados.
 
 ## Venda manual
 
