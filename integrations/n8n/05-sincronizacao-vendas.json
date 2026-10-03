@@ -1,0 +1,380 @@
+{
+  "name": "FUTPB — Vendas Sheets ↔ Supabase",
+  "nodes": [
+    {
+      "id": "Teste manual",
+      "name": "Teste manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "parameters": {},
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "A cada minuto",
+      "name": "A cada minuto",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "Reservar sincronização",
+      "name": "Reservar sincronização",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://wlhugaduwhevmoymyhad.supabase.co/rest/v1/rpc/sales_sync_begin",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "id": "Ler planilha",
+      "name": "Ler planilha",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "GET",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1ugjC_pxX2MqC5_5e_gBOTagv_kN-3ZuN2tffQ8Mb3CI/values/'Vendas'!A1%3AL10001?valueRenderOption=FORMATTED_VALUE",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "id": "Validar leitura",
+      "name": "Validar leitura",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "// Used by the n8n Code node. Read-only: no API calls or writes.\nfunction booleanValue(value, label) {\n  const normalized=String(value ?? '').trim().toLowerCase();\n  if(!normalized)return null;\n  if(['sim','s','true','1','yes'].includes(normalized))return true;\n  if(['não','nao','n','false','0','no'].includes(normalized))return false;\n  throw new Error(`${label}: use Sim, Não ou vazio.`);\n}\nfunction birthdayValue(value) {\n  const v=String(value??'').trim();\n  if(!v)return null;\n  let year,month,day;\n  let match=/^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(v);\n  if(match){year=+match[1];month=+match[2];day=+match[3];}\n  else {match=/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})$/.exec(v);if(!match)throw new Error('Data de aniversário: use DD/MM/AAAA ou AAAA-MM-DD.');day=+match[1];month=+match[2];year=+match[3];}\n  if(year<1900||year>new Date().getUTCFullYear())throw new Error('Ano de aniversário inválido.');\n  const date=new Date(Date.UTC(year,month-1,day));\n  if(date.getUTCFullYear()!==year||date.getUTCMonth()!==month-1||date.getUTCDate()!==day||date>new Date())throw new Error('Data de aniversário inválida.');\n  return date.toISOString().slice(0,10);\n}\nfunction normalizeRow(row){\n  const name=String(row['Nome Completo']??'').trim();\n  if(!name)throw new Error('Nome Completo obrigatório.');\n  let phone=String(row.Telefone??'').replace(/\\D/g,'');\n  if(phone.length===10||phone.length===11)phone='55'+phone;\n  if(!/^55\\d{10,11}$/.test(phone))throw new Error('Telefone inválido: use DDD e número.');\n  const teams=[...new Set(String(row['Time(s)']??'').split(/[;,\\n]/).map(t=>t.trim()).filter(Boolean))];\n  return {customer:{name,phone:'+'+phone,size:String(row.Tamanho??'').trim()||null,desired_shirt:String(row['Camisa Desejado Sorteio']??row['Camisa Preferida']??'').trim()||null,birthday:birthdayValue(row['Data de aniversário']??row.Data),has_purchased:booleanValue(row['Já comprou?'],'Já comprou?'),can_receive_campaigns:booleanValue(row['Aceita Mensagens?'],'Aceita Mensagens?'),last_update_source:'google_sheets'},teams,can_send:booleanValue(row['Aceita Mensagens?'],'Aceita Mensagens?')!==false};\n}\nfunction validateRows(rows){\n const seen=new Set();\n return rows.map((row,index)=>{\n  try{const result=normalizeRow(row);if(seen.has(result.customer.phone))throw new Error('Telefone duplicado nesta leitura.');seen.add(result.customer.phone);return {json:{valid:true,source_row:row.row_number??index+2,...result}};}\n  catch(error){return {json:{valid:false,source_row:row.row_number??index+2,error:error.message}};}\n });\n}\n\n\n// Included by generate-sales.cjs. No credentials.\nconst HEADERS=['ID Venda','Referência','ID Contato','Contato','Telefone','ID Campanha','Campanha','Valor','Data da Venda','Observações','Cancelada?','Versão Sync'];\nfunction uuid(value,label,required=false){const v=String(value??'').trim().toLowerCase();if(!v&&!required)return null;if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v))throw new Error(label+': ID inválido.');return v;}\nfunction parseGrid(grid){\n if(!Array.isArray(grid)||!grid.length||grid[0].slice(0,12).map(v=>String(v).trim()).join('|')!==HEADERS.join('|'))throw new Error('Confira os cabeçalhos Vendas!A1:L1.');\n if(grid.length>=10001)throw new Error('Limite de leitura de vendas atingido.');\n const references=new Set(),ids=new Set();\n return grid.slice(1).flatMap((cells,index)=>{\n if(!cells.some(v=>String(v??'').trim()))return [];\n try{\n const reference=String(cells[1]??'').trim();if(!reference)throw new Error('Referência obrigatória.');if(references.has(reference))throw new Error('Referência duplicada.');references.add(reference);\n const sale_id=uuid(cells[0],'ID Venda');if(sale_id&&ids.has(sale_id))throw new Error('ID Venda duplicado.');if(sale_id)ids.add(sale_id);\n const raw=String(cells[7]??'').trim();const amount=raw?Number(raw.includes(',')?raw.replace(/\\./g,'').replace(',','.'):raw):null;if(amount!==null&&(!Number.isFinite(amount)||amount<0||Math.abs(amount*100-Math.round(amount*100))>1e-7))throw new Error('Valor inválido.');\n const value={reference,customer_id:uuid(cells[2],'ID Contato',true),campaign_id:uuid(cells[5],'ID Campanha'),amount,purchased_on:birthdayValue(cells[8]),notes:String(cells[9]??'').trim()||null,voided:booleanValue(cells[10],'Cancelada?')===true};\n return [{sale_id,row_number:index+2,value,cells}];\n }catch(e){throw new Error(`Vendas, linha ${index+2}: ${e.message}`)}\n });\n}\nfunction stable(value){return JSON.stringify(value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.keys(value).sort().map(k=>[k,value[k]])):value);}\nfunction sheetCells(w){const v=w.value,l=w.labels??{};return [w.sale_id,v.reference,v.customer_id,l.contact_name??'',l.phone??'',v.campaign_id??'',l.campaign_name??'',v.amount??'',v.purchased_on??'',v.notes??'',v.voided?'Sim':'Não',String(w.version)];}\nfunction guardedWrites(plan,grid){\n const rows=parseGrid(grid),data=[];let next=grid.length+1;\n for(const w of plan.writes){\n let matches=rows.filter(r=>r.sale_id===w.sale_id);if(!matches.length)matches=rows.filter(r=>!r.sale_id&&r.value.reference===w.value.reference);\n if(matches.length>1)throw new Error('Venda duplicada antes da gravação.');const existing=matches[0];\n if(w.expected===null){if(existing&&stable(existing.value)!==stable(w.value))throw new Error('Venda inserida durante a execução.');if(!existing&&rows.some(r=>r.value.reference===w.value.reference))throw new Error('Referência apareceu durante a execução.');}\n else if(!existing||stable(existing.value)!==stable(w.expected))throw new Error('Venda alterada durante a sincronização; aguarde a reserva expirar e tente novamente.');\n const row=existing?.row_number??next++,values=sheetCells(w);if(!existing||stable(values)!==stable(HEADERS.map((_,i)=>existing.cells[i]??'')))data.push({range:`'Vendas'!A${row}:L${row}`,values:[values]});\n }\n return {run_id:plan.run_id,has_writes:data.length>0,body:{valueInputOption:'RAW',data},conflicts:plan.conflicts};\n}\n\n\nreturn [{json:{run_id:$('Reservar sincronização').first().json.run_id,rows:parseGrid($input.first().json.values)}}];"
+      },
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "id": "Reconciliar no Supabase",
+      "name": "Reconciliar no Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://wlhugaduwhevmoymyhad.supabase.co/rest/v1/rpc/sales_sync_plan",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({run_id:$json.run_id,rows:$json.rows.map(({cells,row_number,...r})=>r)}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "id": "Reler antes de gravar",
+      "name": "Reler antes de gravar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "GET",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1ugjC_pxX2MqC5_5e_gBOTagv_kN-3ZuN2tffQ8Mb3CI/values/'Vendas'!A1%3AL10001?valueRenderOption=FORMATTED_VALUE",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "position": [
+        1100,
+        0
+      ]
+    },
+    {
+      "id": "Conferir alterações concorrentes",
+      "name": "Conferir alterações concorrentes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "// Used by the n8n Code node. Read-only: no API calls or writes.\nfunction booleanValue(value, label) {\n  const normalized=String(value ?? '').trim().toLowerCase();\n  if(!normalized)return null;\n  if(['sim','s','true','1','yes'].includes(normalized))return true;\n  if(['não','nao','n','false','0','no'].includes(normalized))return false;\n  throw new Error(`${label}: use Sim, Não ou vazio.`);\n}\nfunction birthdayValue(value) {\n  const v=String(value??'').trim();\n  if(!v)return null;\n  let year,month,day;\n  let match=/^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(v);\n  if(match){year=+match[1];month=+match[2];day=+match[3];}\n  else {match=/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})$/.exec(v);if(!match)throw new Error('Data de aniversário: use DD/MM/AAAA ou AAAA-MM-DD.');day=+match[1];month=+match[2];year=+match[3];}\n  if(year<1900||year>new Date().getUTCFullYear())throw new Error('Ano de aniversário inválido.');\n  const date=new Date(Date.UTC(year,month-1,day));\n  if(date.getUTCFullYear()!==year||date.getUTCMonth()!==month-1||date.getUTCDate()!==day||date>new Date())throw new Error('Data de aniversário inválida.');\n  return date.toISOString().slice(0,10);\n}\nfunction normalizeRow(row){\n  const name=String(row['Nome Completo']??'').trim();\n  if(!name)throw new Error('Nome Completo obrigatório.');\n  let phone=String(row.Telefone??'').replace(/\\D/g,'');\n  if(phone.length===10||phone.length===11)phone='55'+phone;\n  if(!/^55\\d{10,11}$/.test(phone))throw new Error('Telefone inválido: use DDD e número.');\n  const teams=[...new Set(String(row['Time(s)']??'').split(/[;,\\n]/).map(t=>t.trim()).filter(Boolean))];\n  return {customer:{name,phone:'+'+phone,size:String(row.Tamanho??'').trim()||null,desired_shirt:String(row['Camisa Desejado Sorteio']??row['Camisa Preferida']??'').trim()||null,birthday:birthdayValue(row['Data de aniversário']??row.Data),has_purchased:booleanValue(row['Já comprou?'],'Já comprou?'),can_receive_campaigns:booleanValue(row['Aceita Mensagens?'],'Aceita Mensagens?'),last_update_source:'google_sheets'},teams,can_send:booleanValue(row['Aceita Mensagens?'],'Aceita Mensagens?')!==false};\n}\nfunction validateRows(rows){\n const seen=new Set();\n return rows.map((row,index)=>{\n  try{const result=normalizeRow(row);if(seen.has(result.customer.phone))throw new Error('Telefone duplicado nesta leitura.');seen.add(result.customer.phone);return {json:{valid:true,source_row:row.row_number??index+2,...result}};}\n  catch(error){return {json:{valid:false,source_row:row.row_number??index+2,error:error.message}};}\n });\n}\n\n\n// Included by generate-sales.cjs. No credentials.\nconst HEADERS=['ID Venda','Referência','ID Contato','Contato','Telefone','ID Campanha','Campanha','Valor','Data da Venda','Observações','Cancelada?','Versão Sync'];\nfunction uuid(value,label,required=false){const v=String(value??'').trim().toLowerCase();if(!v&&!required)return null;if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v))throw new Error(label+': ID inválido.');return v;}\nfunction parseGrid(grid){\n if(!Array.isArray(grid)||!grid.length||grid[0].slice(0,12).map(v=>String(v).trim()).join('|')!==HEADERS.join('|'))throw new Error('Confira os cabeçalhos Vendas!A1:L1.');\n if(grid.length>=10001)throw new Error('Limite de leitura de vendas atingido.');\n const references=new Set(),ids=new Set();\n return grid.slice(1).flatMap((cells,index)=>{\n if(!cells.some(v=>String(v??'').trim()))return [];\n try{\n const reference=String(cells[1]??'').trim();if(!reference)throw new Error('Referência obrigatória.');if(references.has(reference))throw new Error('Referência duplicada.');references.add(reference);\n const sale_id=uuid(cells[0],'ID Venda');if(sale_id&&ids.has(sale_id))throw new Error('ID Venda duplicado.');if(sale_id)ids.add(sale_id);\n const raw=String(cells[7]??'').trim();const amount=raw?Number(raw.includes(',')?raw.replace(/\\./g,'').replace(',','.'):raw):null;if(amount!==null&&(!Number.isFinite(amount)||amount<0||Math.abs(amount*100-Math.round(amount*100))>1e-7))throw new Error('Valor inválido.');\n const value={reference,customer_id:uuid(cells[2],'ID Contato',true),campaign_id:uuid(cells[5],'ID Campanha'),amount,purchased_on:birthdayValue(cells[8]),notes:String(cells[9]??'').trim()||null,voided:booleanValue(cells[10],'Cancelada?')===true};\n return [{sale_id,row_number:index+2,value,cells}];\n }catch(e){throw new Error(`Vendas, linha ${index+2}: ${e.message}`)}\n });\n}\nfunction stable(value){return JSON.stringify(value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.keys(value).sort().map(k=>[k,value[k]])):value);}\nfunction sheetCells(w){const v=w.value,l=w.labels??{};return [w.sale_id,v.reference,v.customer_id,l.contact_name??'',l.phone??'',v.campaign_id??'',l.campaign_name??'',v.amount??'',v.purchased_on??'',v.notes??'',v.voided?'Sim':'Não',String(w.version)];}\nfunction guardedWrites(plan,grid){\n const rows=parseGrid(grid),data=[];let next=grid.length+1;\n for(const w of plan.writes){\n let matches=rows.filter(r=>r.sale_id===w.sale_id);if(!matches.length)matches=rows.filter(r=>!r.sale_id&&r.value.reference===w.value.reference);\n if(matches.length>1)throw new Error('Venda duplicada antes da gravação.');const existing=matches[0];\n if(w.expected===null){if(existing&&stable(existing.value)!==stable(w.value))throw new Error('Venda inserida durante a execução.');if(!existing&&rows.some(r=>r.value.reference===w.value.reference))throw new Error('Referência apareceu durante a execução.');}\n else if(!existing||stable(existing.value)!==stable(w.expected))throw new Error('Venda alterada durante a sincronização; aguarde a reserva expirar e tente novamente.');\n const row=existing?.row_number??next++,values=sheetCells(w);if(!existing||stable(values)!==stable(HEADERS.map((_,i)=>existing.cells[i]??'')))data.push({range:`'Vendas'!A${row}:L${row}`,values:[values]});\n }\n return {run_id:plan.run_id,has_writes:data.length>0,body:{valueInputOption:'RAW',data},conflicts:plan.conflicts};\n}\n\n\nreturn [{json:guardedWrites($('Reconciliar no Supabase').first().json,$input.first().json.values)}];"
+      },
+      "position": [
+        1320,
+        0
+      ]
+    },
+    {
+      "id": "Validar reserva antes da escrita",
+      "name": "Validar reserva antes da escrita",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://wlhugaduwhevmoymyhad.supabase.co/rest/v1/rpc/sales_sync_validate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({run_id:$('Conferir alterações concorrentes').first().json.run_id}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "position": [
+        1430,
+        0
+      ]
+    },
+    {
+      "id": "Há gravações?",
+      "name": "Há gravações?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "writes",
+              "leftValue": "={{ $('Conferir alterações concorrentes').first().json.has_writes }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "position": [
+        1540,
+        0
+      ]
+    },
+    {
+      "id": "Atualizar planilha",
+      "name": "Atualizar planilha",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1ugjC_pxX2MqC5_5e_gBOTagv_kN-3ZuN2tffQ8Mb3CI/values:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Conferir alterações concorrentes').first().json.body) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "position": [
+        1760,
+        0
+      ]
+    },
+    {
+      "id": "Confirmar sincronização",
+      "name": "Confirmar sincronização",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://wlhugaduwhevmoymyhad.supabase.co/rest/v1/rpc/sales_sync_ack",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({run_id:$('Conferir alterações concorrentes').first().json.run_id}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "position": [
+        1980,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Teste manual": {
+      "main": [
+        [
+          {
+            "node": "Reservar sincronização",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A cada minuto": {
+      "main": [
+        [
+          {
+            "node": "Reservar sincronização",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reservar sincronização": {
+      "main": [
+        [
+          {
+            "node": "Ler planilha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler planilha": {
+      "main": [
+        [
+          {
+            "node": "Validar leitura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar leitura": {
+      "main": [
+        [
+          {
+            "node": "Reconciliar no Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reconciliar no Supabase": {
+      "main": [
+        [
+          {
+            "node": "Reler antes de gravar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reler antes de gravar": {
+      "main": [
+        [
+          {
+            "node": "Conferir alterações concorrentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conferir alterações concorrentes": {
+      "main": [
+        [
+          {
+            "node": "Validar reserva antes da escrita",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar reserva antes da escrita": {
+      "main": [
+        [
+          {
+            "node": "Há gravações?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Há gravações?": {
+      "main": [
+        [
+          {
+            "node": "Atualizar planilha",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Confirmar sincronização",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualizar planilha": {
+      "main": [
+        [
+          {
+            "node": "Confirmar sincronização",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "executionTimeout": 120
+  },
+  "active": false
+}

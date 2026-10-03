@@ -18,7 +18,7 @@ function parseGrid(grid){
   if(!cells.some(v=>String(v??'').trim()))return [];
   const row=Object.fromEntries(HEADERS.map((h,i)=>[h,cells[i]??'']));
   let normalized;try{normalized=normalizeRow(row)}catch(e){throw new Error(`Linha ${index+2}: ${e.message}`)}
-  const shirt_types=[...new Set(String(row['Tipos de camisa']).split(/[;,]/).map(v=>v.trim()).filter(Boolean))].sort();if(shirt_types.some(v=>!['Jogador','Torcedor','Retrô'].includes(v)))throw new Error(`Linha ${index+2}: tipo de camisa inválido.`);
+  const shirt_types=[...new Set(String(row['Tipos de camisa']).split(/[;,]/).map(v=>v.trim()).filter(Boolean))].sort();if(shirt_types.some(v=>!['Jogador','Torcedor','Retrô','Feminina'].includes(v)))throw new Error(`Linha ${index+2}: tipo de camisa inválido.`);
   const value={shirt_types,...normalized.customer,archived:booleanValue(row['Excluído?'],'Excluído?')===true,has_referrals:booleanValue(row['Possui Indicações?'],'Possui Indicações?'),total_spent:numeric(row['Total Comprado']),order_count:numeric(row['Número de Pedidos'],true),last_purchase_at:purchaseDate(row['Última Compra']),teams:normalized.teams.sort()};delete value.last_update_source;
   const id=String(row['ID Cliente']).trim();
   if(id&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))throw new Error(`Linha ${index+2}: ID Cliente inválido.`);

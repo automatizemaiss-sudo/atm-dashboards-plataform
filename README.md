@@ -14,7 +14,7 @@ npm test
 npm run build
 ```
 
-Não há cadastro público nem modo demonstrativo gravando clientes fictícios. Sem a chave pública, a tela explica a configuração pendente. A instância WhatsApp é criada desabilitada.
+Há cadastro público de sorteio em /sorteio, configurado conforme docs/VENDAS-FORMULARIO.md. Não há modo demonstrativo gravando contatos fictícios. Sem a chave pública, a tela explica a configuração pendente. A instância WhatsApp é criada desabilitada.
 
 ## Publicação
 
@@ -27,3 +27,7 @@ Entrega inicial: login, organização, leitura de indicadores, clientes editáve
 ## Atualização de Clientes, Segmentos e campanhas
 
 Siga docs/ATUALIZACAO.md para migrations 004–006 e a coluna O Excluído?. Fluxos Uazapi ficam desativados até a configuração real; consulte docs/CAMPANHAS-UAZAPI.md.
+
+## Vendas e formulário público
+
+Tela manual em Campanhas e formulário /sorteio. Configuração e migrações 009–010 em docs/VENDAS-FORMULARIO.md. Fluxo de vendas 05 separado do fluxo de contatos. A credencial privada usada pelo formulário deve existir apenas no servidor.

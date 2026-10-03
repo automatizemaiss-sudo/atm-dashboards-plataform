@@ -43,7 +43,7 @@ on conflict(instance_id) do update set token_hash=excluded.token_hash;
 
 ## Vendas
 
-A identificação é manual. Os totais de compra do cliente continuam editáveis no dashboard e na planilha. O vínculo de uma venda com campanha é um registro em sales; a tela de cadastro de vendas e uma aba/fluxo dedicado para vendas na planilha ainda precisam ser concluídos. Não deduzir uma venda de campanha a partir de has_purchased ou total_spent.
+A identificação é manual. Os totais de compra do cliente continuam editáveis no dashboard e na planilha. O vínculo de uma venda com campanha é um registro em sales; a tela de cadastro manual e o fluxo dedicado da aba Vendas foram implementados; siga docs/VENDAS-FORMULARIO.md para a migração e ativação. Não deduzir uma venda de campanha a partir de has_purchased ou total_spent.
 
 ## Estado da entrega
 
