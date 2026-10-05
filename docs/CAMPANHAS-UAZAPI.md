@@ -48,3 +48,7 @@ A identificação é manual. Os totais de compra do cliente continuam editáveis
 ## Estado da entrega
 
 SQL e lógica verificados localmente. Os JSONs precisam ser importados e testados no n8n real. Não foi configurado webhook externo nem realizada chamada de envio.
+
+## Intervalos e exclusão (migração 011)
+
+O fluxo atualizado consulta a cada cinco segundos e usa Wait para respeitar o intervalo aleatório definido por campanha. Substitui a cadência antiga de uma mensagem a cada 30 segundos. Ativação e semântica dos status em docs/CAMPANHAS-INTERVALO-EXCLUSAO.md.

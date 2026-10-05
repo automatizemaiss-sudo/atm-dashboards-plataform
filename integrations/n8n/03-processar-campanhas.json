@@ -13,8 +13,8 @@
       ]
     },
     {
-      "id": "A cada 30 segundos",
-      "name": "A cada 30 segundos",
+      "id": "A cada 5 segundos",
+      "name": "A cada 5 segundos",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "parameters": {
@@ -22,7 +22,7 @@
           "interval": [
             {
               "field": "seconds",
-              "secondsInterval": 30
+              "secondsInterval": 5
             }
           ]
         }
@@ -98,6 +98,21 @@
       },
       "position": [
         580,
+        0
+      ]
+    },
+    {
+      "id": "Aguardar intervalo da campanha",
+      "name": "Aguardar intervalo da campanha",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": "={{ Math.max(0, Number($('Reservar mensagem').first().json.wait_seconds || 0)) }}",
+        "unit": "seconds"
+      },
+      "position": [
+        680,
         0
       ]
     },
@@ -289,7 +304,7 @@
         ]
       ]
     },
-    "A cada 30 segundos": {
+    "A cada 5 segundos": {
       "main": [
         [
           {
@@ -323,6 +338,17 @@
       ]
     },
     "Há mensagem?": {
+      "main": [
+        [
+          {
+            "node": "Aguardar intervalo da campanha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar intervalo da campanha": {
       "main": [
         [
           {
@@ -411,7 +437,7 @@
   "settings": {
     "executionOrder": "v1",
     "timezone": "America/Sao_Paulo",
-    "executionTimeout": 120,
+    "executionTimeout": 7200,
     "saveDataSuccessExecution": "none",
     "saveDataErrorExecution": "none"
   }

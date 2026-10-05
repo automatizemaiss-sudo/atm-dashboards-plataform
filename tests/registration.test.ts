@@ -8,3 +8,14 @@ test('formulário normaliza contato e mantém autorização explícita',()=>{
 test('formulário rejeita campos obrigatórios, datas impossíveis e opções inválidas',()=>{
  for(const patch of [{name:''},{phone:'123'},{teams:';'},{birthday:'2026-02-30'},{birthday:'2026-10-04'},{size:'errado'},{has_purchased:null},{can_receive_campaigns:undefined},{submission_id:'bad'}])assert.throws(()=>validateRegistration({...data,...patch},'2026-10-03'));
 });
+
+test('times aceitam vírgula e ponto e vírgula juntos',()=>{
+ assert.deepEqual(validateRegistration({...data,teams:'Barcelona, Real Madrid; Barcelona,,;'},'2026-10-03').teams,['Barcelona','Real Madrid']);
+});
+test('intenção de compra exige detalhes apenas quando a resposta é sim',()=>{
+ const result=validateRegistration({...data,purchase_intent:true,purchase_details:' Barcelona I 2026/27, em dezembro '});
+ assert.equal(result.purchase_intent,true);assert.equal(result.purchase_details,'Barcelona I 2026/27, em dezembro');assert.equal(result.has_referrals,null);
+ for(const purchase_details of ['',undefined,'a'.repeat(501)])assert.throws(()=>validateRegistration({...data,purchase_intent:true,purchase_details}));
+ assert.throws(()=>validateRegistration({...data,purchase_intent:'sim'}));
+ assert.equal(validateRegistration({...data,purchase_intent:false,purchase_details:'antigo'}).purchase_details,null);
+});
