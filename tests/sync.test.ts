@@ -21,7 +21,7 @@ test('reconciliação idempotente, merges, conflito e retentativa após perda de
  const db=new PGlite();
  try{
  await db.exec(`create role anon; create role authenticated; create role service_role; create schema auth; create table auth.users(id uuid primary key,email text); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$; create schema storage; create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]); create table storage.objects(id uuid,bucket_id text,name text); alter table storage.objects enable row level security; create function storage.foldername(name text) returns text[] language sql as $$ select string_to_array(name,'/') $$;`);
- for(const file of ['001_initial.sql','002_campaign_functions.sql','003_sheet_sync.sql','004_customer_tools.sql','005_campaign_worker.sql','006_archive_customers.sql','007_contact_interests.sql','008_feminine_team_search.sql'])await db.exec(readFileSync('supabase/migrations/'+file,'utf8').replace('create extension if not exists pgcrypto;',''));
+ for(const file of ['001_initial.sql','002_campaign_functions.sql','003_sheet_sync.sql','004_customer_tools.sql','005_campaign_worker.sql','006_archive_customers.sql','007_contact_interests.sql','008_feminine_team_search.sql','012_whatsapp_reply_phone.sql'])await db.exec(readFileSync('supabase/migrations/'+file,'utf8').replace('create extension if not exists pgcrypto;',''));
  const org=(await db.query<{id:string}>("select id from organizations where slug='futpb'")).rows[0].id;
  async function begin(){return (await db.query<{result:{run_id:string}}>('select sheet_sync_begin() result')).rows[0].result.run_id}
  async function plan(token:string,rows:any[]){return (await db.query<{result:any}>('select sheet_sync_plan($1,$2::jsonb) result',[token,JSON.stringify(rows)])).rows[0].result}
@@ -89,6 +89,20 @@ test('reconciliação idempotente, merges, conflito e retentativa após perda de
  assert.ok((await db.query<{read_at:string}>('select read_at from campaign_recipients where campaign_id=$1',[campaign])).rows[0].read_at);
  await assert.rejects(db.query('select ingest_uazapi_webhook($1)',[JSON.stringify({...event,token:'wrong'})]));
  assert.equal((await db.query<{payload:any}>("select payload from integration_events where provider='uazapi'")).rows[0].payload.token,undefined);
+ // Brazilian ninth-digit variation, inbound-only attribution and duplicate delivery.
+ const reply={token:'test-token',EventType:'messages',message:{fromMe:false,isGroup:false,chatid:'558399993333@s.whatsapp.net',sender_pn:'558399993333@s.whatsapp.net',messageTimestamp:Date.now()+1000}};
+ assert.equal((await db.query<{r:any}>('select ingest_uazapi_webhook($1) r',[JSON.stringify(reply)])).rows[0].r.status,'stored');
+ assert.ok((await db.query<{r:string}>('select replied_at r from campaign_recipients where campaign_id=$1',[campaign])).rows[0].r);
+ assert.equal((await db.query<{r:any}>('select ingest_uazapi_webhook($1) r',[JSON.stringify(reply)])).rows[0].r.status,'duplicate');
+ await db.query('update campaign_recipients set replied_at=null where campaign_id=$1',[campaign]);
+ for(const change of [{fromMe:true},{isGroup:true},{messageTimestamp:1}]){
+ await db.query('select ingest_uazapi_webhook($1)',[JSON.stringify({...reply,message:{...reply.message,...change}})]);
+ assert.equal((await db.query<{r:string}>('select replied_at r from campaign_recipients where campaign_id=$1',[campaign])).rows[0].r,null);
+ }
+ const alias=(await db.query<{id:string}>("insert into customers(organization_id,name,phone) values($1,'Ambiguous','+558399993333') returning id",[org])).rows[0].id;
+ await db.query("insert into campaign_recipients(organization_id,campaign_id,customer_id,snapshot,sent_at) values($1,$2,$3,$4,now())",[org,campaign,alias,JSON.stringify({phone:'+558399993333'})]);
+ await db.query('select ingest_uazapi_webhook($1)',[JSON.stringify({...reply,message:{...reply.message,messageTimestamp:Date.now()+2000}})]);
+ assert.equal(Number((await db.query<{n:number}>('select count(*) n from campaign_recipients where campaign_id=$1 and replied_at is not null',[campaign])).rows[0].n),0);
  await db.exec("set request.jwt.claim.sub=''");
  await db.exec('grant usage on schema public to authenticated; set role authenticated');await assert.rejects(db.query('select sheet_sync_begin()'));
  }finally{await db.close()}

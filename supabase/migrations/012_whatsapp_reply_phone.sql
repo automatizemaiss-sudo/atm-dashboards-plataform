@@ -46,12 +46,13 @@ begin
  return jsonb_build_object('status','stored');
 end; $$;
 
--- Reconcile already authenticated and stored replies; never replay sends.
+-- Reconcile stored replies only for organizations with exactly one instance.
+-- With multiple instances, the original event does not retain authenticated instance identity.
 do $$ declare e record; begin
  for e in select ev.payload,i.id from public.integration_events ev
- join public.whatsapp_instances i on i.organization_id=ev.organization_id and true
+ join public.whatsapp_instances i on i.organization_id=ev.organization_id
  where ev.provider='uazapi' and ev.payload->>'EventType'='messages'
- and (select count(*) from public.whatsapp_instances x where x.organization_id=ev.organization_id and true)=1
+ and (select count(*) from public.whatsapp_instances x where x.organization_id=ev.organization_id)=1
  loop perform public.apply_uazapi_reply(e.id,e.payload); end loop;
 end; $$;
 notify pgrst,'reload schema';
