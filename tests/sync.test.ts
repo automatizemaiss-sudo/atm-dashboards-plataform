@@ -21,7 +21,7 @@ test('reconciliação idempotente, merges, conflito e retentativa após perda de
  const db=new PGlite();
  try{
  await db.exec(`create role anon; create role authenticated; create role service_role; create schema auth; create table auth.users(id uuid primary key,email text); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$; create schema storage; create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]); create table storage.objects(id uuid,bucket_id text,name text); alter table storage.objects enable row level security; create function storage.foldername(name text) returns text[] language sql as $$ select string_to_array(name,'/') $$;`);
- for(const file of ['001_initial.sql','002_campaign_functions.sql','003_sheet_sync.sql','004_customer_tools.sql','005_campaign_worker.sql','006_archive_customers.sql','007_contact_interests.sql','008_feminine_team_search.sql','012_whatsapp_reply_phone.sql'])await db.exec(readFileSync('supabase/migrations/'+file,'utf8').replace('create extension if not exists pgcrypto;',''));
+ for(const file of ['001_initial.sql','002_campaign_functions.sql','003_sheet_sync.sql','004_customer_tools.sql','005_campaign_worker.sql','006_archive_customers.sql','007_contact_interests.sql','008_feminine_team_search.sql','012_whatsapp_reply_phone.sql','013_contact_options_save.sql'])await db.exec(readFileSync('supabase/migrations/'+file,'utf8').replace('create extension if not exists pgcrypto;',''));
  const org=(await db.query<{id:string}>("select id from organizations where slug='futpb'")).rows[0].id;
  async function begin(){return (await db.query<{result:{run_id:string}}>('select sheet_sync_begin() result')).rows[0].result.run_id}
  async function plan(token:string,rows:any[]){return (await db.query<{result:any}>('select sheet_sync_plan($1,$2::jsonb) result',[token,JSON.stringify(rows)])).rows[0].result}
@@ -56,6 +56,14 @@ test('reconciliação idempotente, merges, conflito e retentativa após perda de
  const full=(await db.query<{v:any}>('select sync_customer_value($1) v',[id])).rows[0].v;
  const version=Number((await db.query<{v:number}>('select version v from customers where id=$1',[id])).rows[0].v);
  await db.query('select save_customer($1,$2,$3,$4,$5)',[org,id,version,JSON.stringify({...full,shirt_types:['Feminina','Jogador','Retrô']}),JSON.stringify(['Milan','Barcelona'])]);
+ const newContact=(await db.query<{id:string}>('select save_customer($1,null,null,$2,$3) id',[org,JSON.stringify({name:'NBA fan',phone:'+5583999994444',size:'4XL',shirt_types:['NBA']}),JSON.stringify(['Lakers','Bulls'])])).rows[0].id;
+ assert.equal((await db.query('select * from customer_teams where customer_id=$1',[newContact])).rows.length,2);
+ const nv=(await db.query<{v:number}>('select version v from customers where id=$1',[newContact])).rows[0].v;
+ await db.query('select save_customer($1,$2,$3,$4,$5)',[org,newContact,nv,JSON.stringify({name:'NBA fan',phone:'+5583999994444',size:'Infantil 12',shirt_types:['NBA']}),'["Lakers"]']);
+ assert.equal((await db.query('select * from customer_teams where customer_id=$1',[newContact])).rows.length,1);
+ // Remove regression fixture before existing audience/count assertions.
+ await db.query('delete from customer_teams where customer_id=$1',[newContact]);
+ await db.exec('reset role');await db.query('delete from customer_events where customer_id=$1',[newContact]);await db.query('delete from customers where id=$1',[newContact]);await db.exec('set role authenticated');
  const interestRules={operator:'and',conditions:[{field:'shirt_type',op:'eq',value:'Retrô'},{field:'team',op:'eq',value:'Milan'}]};
  const audience=(await db.query<{r:any}>("select browse_contacts($1,rules=>$2::jsonb) r",[org,JSON.stringify(interestRules)])).rows[0].r;
  assert.equal(Number(audience.total),1);assert.equal(audience.rows[0].id,id);
@@ -104,7 +112,7 @@ test('reconciliação idempotente, merges, conflito e retentativa após perda de
  await db.query('select ingest_uazapi_webhook($1)',[JSON.stringify({...reply,message:{...reply.message,messageTimestamp:Date.now()+2000}})]);
  assert.equal(Number((await db.query<{n:number}>('select count(*) n from campaign_recipients where campaign_id=$1 and replied_at is not null',[campaign])).rows[0].n),0);
  await db.exec("set request.jwt.claim.sub=''");
- await db.exec('grant usage on schema public to authenticated; set role authenticated');await assert.rejects(db.query('select sheet_sync_begin()'));
+ await db.exec('grant usage on schema public to authenticated; set role authenticated');await assert.rejects(db.query('select sheet_sync_begin()'));await assert.rejects(db.query('select save_customer($1,null,null,$2,$3)',[org,JSON.stringify({name:'Unauthorized',phone:'+5583999995555',shirt_types:['NBA']}),'["Lakers"]']));
  }finally{await db.close()}
 });
 
@@ -136,7 +144,12 @@ test('fluxos de campanhas ficam desativados e bloqueiam envio sem configuração
 test('tipos de camisa aceitam Feminina e normalizam caixa, acentos e espaços',()=>{
  const cells=[...row];cells[15]=' feminina ; JOGADOR, Retro';
  assert.deepEqual(parseGrid([HEADERS,cells])[0].value.shirt_types,['Feminina','Jogador','Retrô']);
- cells[15]='Infantil';assert.throws(()=>parseGrid([HEADERS,cells]),/Use Jogador, Torcedor, Retrô ou Feminina/);
+ cells[15]='Infantil';assert.throws(()=>parseGrid([HEADERS,cells]),/Use Jogador, Torcedor, Retrô, Feminina ou NBA/);
  const flow=JSON.parse(readFileSync('integrations/n8n/02-sincronizacao-bidirecional.json','utf8'));
  for(const name of ['Validar leitura','Conferir alterações concorrentes'])assert.ok(flow.nodes.find((n:any)=>n.name===name).parameters.jsCode.includes("feminina:'Feminina'"));
+});
+
+test('planilha aceita NBA junto de outros interesses e tamanhos infantis',()=>{
+ const cells=[...row,'Não','nba; FEMININA'];cells[4]='Infantil 12';
+ const v=parseGrid([HEADERS,cells])[0].value;assert.deepEqual(v.shirt_types,['Feminina','NBA']);assert.equal(v.size,'Infantil 12');
 });
