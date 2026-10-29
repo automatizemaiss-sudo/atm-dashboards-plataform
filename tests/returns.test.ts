@@ -10,13 +10,21 @@ test('retornos: agendamento, contagens, cancelamento, permissões e envio',async
  await db.exec("insert into auth.users values('11111111-1111-1111-1111-111111111111','owner@test.local');insert into organization_users select id,'11111111-1111-1111-1111-111111111111' from organizations;set request.jwt.claim.sub='11111111-1111-1111-1111-111111111111';");
 
  const instance=(await db.query<{id:string}>('update whatsapp_instances set enabled=true where organization_id=$1 returning id',[org])).rows[0].id;
- async function save(id:string|null,version:number|null,automatic:boolean,date:string|null){return (await db.query<{id:string}>(`select save_customer($1,$2,$3,$4::jsonb,'[]') id`,[org,id,version,JSON.stringify({name:'Retorno',phone:'+5583999991234',return_date:date,return_automatic:automatic,return_message:'Olá {{nome}}',return_instance_id:instance})])).rows[0].id;}
+ async function save(id:string|null,version:number|null,automatic:boolean,date:string|null){return (await db.query<{id:string}>(`select save_customer($1,$2,$3,$4::jsonb,'[]') id`,[org,id,version,JSON.stringify({name:'Retorno',phone:'+5583999991234',return_date:date,return_time:automatic?'00:00':null,return_automatic:automatic,return_message:'Olá {{nome}}',return_instance_id:instance})])).rows[0].id;}
  async function customer(id:string){return (await db.query<any>('select * from customers where id=$1',[id])).rows[0];}
  const today=(await db.query<{d:string}>("select to_char(now() at time zone 'America/Sao_Paulo','YYYY-MM-DD') d")).rows[0].d;
  const id=await save(null,null,false,today);
  async function list(auto:boolean){return (await db.query<{r:any}>('select customer_returns($1,$2,0) r',[org,auto])).rows[0].r;}
  assert.equal((await list(false)).manual,1);assert.equal((await list(true)).automatic,0);
  let c=await customer(id);await save(id,c.version,true,today);c=await customer(id);
+ await assert.rejects(db.query("update customers set return_time=null where id=$1",[id]));
+ await db.query("update customers set return_time='23:59' where id=$1",[id]);c=await customer(id);
+ const futureCampaign=c.return_campaign_id;
+ const scheduled=(await db.query<{matches:boolean}>("select scheduled_at=($2::date+time '23:59') at time zone 'America/Sao_Paulo' as matches from campaigns where id=$1",[futureCampaign,today])).rows[0];assert.equal(scheduled.matches,true);
+ assert.equal((await list(true)).automatic,1); // Today's later sends remain visible.
+ assert.equal((await db.query<{r:any}>('select claim_whatsapp_dispatch() r')).rows[0].r.available,false);
+ await db.query("update customers set return_time='00:00' where id=$1",[id]);c=await customer(id);
+ assert.equal((await db.query<{status:string}>('select status from campaigns where id=$1',[futureCampaign])).rows[0].status,'cancelled');
  const first=c.return_campaign_id;assert.ok(first);assert.equal((await list(false)).manual,0);assert.equal((await list(true)).automatic,1);
  assert.equal((await db.query('select * from campaign_recipients where campaign_id=$1',[first])).rows.length,1);
  assert.equal((await list(true)).rows[0].phone,'+5583999991234');
