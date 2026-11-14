@@ -12,8 +12,11 @@ function http(name,url,auth,body,x){return add(name,'httpRequest',{method:body?'
 add('Teste manual','manualTrigger',{},0);add('A cada minuto','scheduleTrigger',{rule:{interval:[{field:'minutes',minutesInterval:1}]}},0,1.2);
 http('Reservar sincronização',base+'sheet_sync_begin','supabaseApi','{}',220);
 http('Ler planilha',readUrl,'googleSheetsOAuth2Api',null,440);
-add('Validar leitura','code',{jsCode:shared+"return [{json:{run_id:$('Reservar sincronização').first().json.run_id,rows:parseGrid($input.first().json.values)}}];"},660,2);
-http('Reconciliar no Supabase',base+'sheet_sync_plan','supabaseApi',"={{ JSON.stringify({run_id:$json.run_id,rows:$json.rows.map(({cells,row_number,...r})=>r)}) }}",880);
+add('Validar leitura','code',{jsCode:shared+"return [{json:{run_id:$('Reservar sincronização').first().json.run_id,...validateGrid($input.first().json.values)}}];"},660,2);
+http('Registrar validação',base+'sheet_sync_report_validation','supabaseApi',"={{ JSON.stringify({run_id:$json.run_id,issues:$json.issues}) }}",720);
+add('Cadastro válido?','if',{conditions:{options:{caseSensitive:true,leftValue:'',typeValidation:'strict',version:2},conditions:[{id:'valid',leftValue:'={{ $json.valid }}',rightValue:true,operator:{type:'boolean',operation:'true',singleValue:true}}],combinator:'and'},options:{}},780,2.2);
+add('Exibir pendências','code',{jsCode:"throw new Error('Cadastro inválido: '+$('Registrar validação').first().json.issues+' pendência(s) registrada(s). Abra Pendências da planilha no dashboard.');"},900,2);
+http('Reconciliar no Supabase',base+'sheet_sync_plan','supabaseApi',"={{ JSON.stringify({run_id:$('Validar leitura').first().json.run_id,rows:$('Validar leitura').first().json.rows.map(({cells,row_number,...r})=>r)}) }}",880);
 http('Reler antes de gravar',readUrl,'googleSheetsOAuth2Api',null,1100);
 add('Conferir alterações concorrentes','code',{jsCode:shared+"return [{json:guardedWrites($('Reconciliar no Supabase').first().json,$input.first().json.values)}];"},1320,2);
 http('Validar reserva antes da escrita',base+'sheet_sync_validate','supabaseApi',"={{ JSON.stringify({run_id:$('Conferir alterações concorrentes').first().json.run_id}) }}",1430);
@@ -21,6 +24,7 @@ add('Há gravações?','if',{conditions:{options:{caseSensitive:true,leftValue:'
 http('Atualizar planilha',`https://sheets.googleapis.com/v4/spreadsheets/${sheet}/values:batchUpdate`,'googleSheetsOAuth2Api',"={{ JSON.stringify($('Conferir alterações concorrentes').first().json.body) }}",1760);
 http('Confirmar sincronização',base+'sheet_sync_ack','supabaseApi',"={{ JSON.stringify({run_id:$('Conferir alterações concorrentes').first().json.run_id}) }}",1980);
 connect('Teste manual','Reservar sincronização');connect('A cada minuto','Reservar sincronização');
-for(const [a,b] of [['Reservar sincronização','Ler planilha'],['Ler planilha','Validar leitura'],['Validar leitura','Reconciliar no Supabase'],['Reconciliar no Supabase','Reler antes de gravar'],['Reler antes de gravar','Conferir alterações concorrentes'],['Conferir alterações concorrentes','Validar reserva antes da escrita'],['Validar reserva antes da escrita','Há gravações?'],['Há gravações?','Atualizar planilha'],['Atualizar planilha','Confirmar sincronização']])connect(a,b);
+for(const [a,b] of [['Reservar sincronização','Ler planilha'],['Ler planilha','Validar leitura'],['Validar leitura','Registrar validação'],['Registrar validação','Cadastro válido?'],['Cadastro válido?','Reconciliar no Supabase'],['Reconciliar no Supabase','Reler antes de gravar'],['Reler antes de gravar','Conferir alterações concorrentes'],['Conferir alterações concorrentes','Validar reserva antes da escrita'],['Validar reserva antes da escrita','Há gravações?'],['Há gravações?','Atualizar planilha'],['Atualizar planilha','Confirmar sincronização']])connect(a,b);
 connect('Há gravações?','Confirmar sincronização',1);
+connect('Cadastro válido?','Exibir pendências',1);
 fs.writeFileSync('integrations/n8n/02-sincronizacao-bidirecional.json',JSON.stringify({name:'FUTPB — Sheets ↔ Supabase com reconciliação',nodes,connections,settings:{executionOrder:'v1',timezone:'America/Sao_Paulo',executionTimeout:120},active:false},null,2)+'\n');

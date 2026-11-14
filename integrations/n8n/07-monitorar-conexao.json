@@ -1,0 +1,147 @@
+{
+  "name": "ATM — Monitorar conexão WhatsApp",
+  "nodes": [
+    {
+      "id": "A cada minuto",
+      "name": "A cada minuto",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "Consultar instância monitorada",
+      "name": "Consultar instância monitorada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "GET",
+        "url": "https://automatizemais.uazapi.com/instance/status",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "position": [
+        200,
+        0
+      ]
+    },
+    {
+      "id": "Verificar conexão",
+      "name": "Verificar conexão",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const data=$input.first().json;const status=String(data.instance?.status??data.status??'').toLowerCase();\nif(!['connected','disconnected','connecting','hibernated'].includes(status))throw new Error('Resposta de status não reconhecida; revisar contrato da Uazapi');\nconst state=$getWorkflowStaticData('global');\nif(status==='connected'){state.lastAlertAt=0;return [];}\nif(Date.now()-(state.lastAlertAt??0)<15*60*1000)return [];\nreturn [{json:{text:'⚠️ WhatsApp sem conexão pronta para envio\\nEstado: '+status+'\\nHorário: '+new Date().toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+'\\nConfira a instância monitorada no painel Uazapi. Os disparos podem estar interrompidos.'}}];"
+      },
+      "position": [
+        400,
+        0
+      ]
+    },
+    {
+      "id": "Enviar alerta ao grupo",
+      "name": "Enviar alerta ao grupo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://automatizemais.uazapi.com/send/text",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({number:\"120363432266870295@g.us\",text:$json.text,linkPreview:false}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "position": [
+        600,
+        0
+      ],
+      "notesInFlow": true,
+      "notes": "Usar credencial Header Auth exclusiva: Uazapi — Alertas (final 69fb). Header: token. Não selecionar a credencial FUTPB. O valor da credencial deve ser o token da instância remetente solicitada pelo dono."
+    },
+    {
+      "id": "Registrar alerta enviado",
+      "name": "Registrar alerta enviado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "if(!$input.first().json.messageid || $input.first().json.error)throw new Error('Uazapi não confirmou a aceitação do alerta');const state=$getWorkflowStaticData('global');state.lastAlertAt=Date.now();return $input.all();"
+      },
+      "position": [
+        800,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "A cada minuto": {
+      "main": [
+        [
+          {
+            "node": "Consultar instância monitorada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar instância monitorada": {
+      "main": [
+        [
+          {
+            "node": "Verificar conexão",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar conexão": {
+      "main": [
+        [
+          {
+            "node": "Enviar alerta ao grupo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar alerta ao grupo": {
+      "main": [
+        [
+          {
+            "node": "Registrar alerta enviado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  }
+}

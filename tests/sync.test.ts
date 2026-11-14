@@ -8,8 +8,16 @@ const validator=require('../integrations/n8n/validate-sheet.cjs');
 const syncSource=readFileSync('integrations/n8n/sync-sheet.cjs','utf8');
 const moduleObject:{exports:any}={exports:{}};
 new Function('module','normalizeRow','booleanValue','birthdayValue',syncSource)(moduleObject,validator.normalizeRow,(value:any)=>value===''||value==null?null:['sim','true'].includes(String(value).toLowerCase()),validator.birthdayValue);
-const {HEADERS,parseGrid,guardedWrites}=moduleObject.exports;
+const {HEADERS,parseGrid,validateGrid,guardedWrites}=moduleObject.exports;
 const row=['Teste','(83) 99999-1111','Barcelona Home','Corinthians; Barcelona','G','15/04/1990','Sim','Sim','','','','','',''];
+test('última compra aceita ano abreviado sem flexibilizar aniversário',()=>{
+ const purchase=(date:string)=>{const cells=[...row];cells[13]=date;return parseGrid([HEADERS,cells])[0].value.last_purchase_at;};
+ for(const date of ['21/10/20','0020-10-21','21/10/2020','2020-10-21'])assert.equal(purchase(date),'2020-10-21');
+ assert.equal(purchase(''),null);
+ assert.equal(purchase('29/02/20'),'2020-02-29');
+ for(const date of ['31/02/20','29/02/21','21/10/99','2020-13-01'])assert.throws(()=>purchase(date),/Última Compra/);
+ for(const date of ['21/10/20','0020-10-21']){const cells=[...row];cells[5]=date;assert.throws(()=>parseGrid([HEADERS,cells]),/aniversário/);}
+});
 test('guarda de planilha detecta edição e mantém IDs ao trocar ordem',()=>{
  const parsed=parseGrid([HEADERS,row]);const id='11111111-1111-1111-1111-111111111111';
  const plan={run_id:id,writes:[{customer_id:id,original_id:null,expected:parsed[0].value,value:parsed[0].value,version:1}],conflicts:[]};
@@ -152,4 +160,17 @@ test('tipos de camisa aceitam Feminina e normalizam caixa, acentos e espaços',(
 test('planilha aceita NBA junto de outros interesses e tamanhos infantis',()=>{
  const cells=[...row,'Não','nba; FEMININA; infantil'];cells[4]='Infantil 12';
  const v=parseGrid([HEADERS,cells])[0].value;assert.deepEqual(v.shirt_types,['Feminina','Infantil','NBA']);assert.equal(v.size,'Infantil 12');
+});
+
+test('validação registra erros de várias linhas e não permite importação parcial',()=>{
+ const a=[...row],b=[...row];a[13]='2099-12-06';b[1]='(83) 99999-2222';b[13]='31/02/20';
+ const report=validateGrid([HEADERS,a,b]);assert.equal(report.valid,false);assert.equal(report.issues.length,2);
+ assert.deepEqual(report.issues.map((i:any)=>[i.row_number,i.field]),[[2,'Última Compra'],[3,'Última Compra']]);
+ assert.equal(report.issues[0].value,'2099-12-06');
+ assert.equal(validateGrid([HEADERS,row,row]).valid,false);
+ assert.equal(validateGrid([['Cabeçalho errado']]).issues[0].row_number,1);
+ const flow=JSON.parse(readFileSync('integrations/n8n/02-sincronizacao-bidirecional.json','utf8'));
+ assert.equal(flow.connections['Validar leitura'].main[0][0].node,'Registrar validação');
+ assert.equal(flow.connections['Cadastro válido?'].main[1][0].node,'Exibir pendências');
+ assert.equal(flow.connections['Cadastro válido?'].main[0][0].node,'Reconciliar no Supabase');
 });

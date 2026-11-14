@@ -5,8 +5,25 @@ function numeric(value,integer=false){
  const normalized=raw.includes(',')?raw.replace(/\./g,'').replace(',','.'):raw;
  const n=Number(normalized);if(!Number.isFinite(n)||n<0||(integer&&!Number.isInteger(n)))throw new Error('Valor de compra/pedidos inválido.');return n;
 }
-function purchaseDate(value){const v=String(value??'').trim();if(!v)return null;return birthdayValue(v);}
-function parseGrid(grid){
+function purchaseDate(value){
+ const v=String(value??'').trim();if(!v)return null;
+ let year,month,day;
+ let match=/^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+ if(match){year=+match[1];month=+match[2];day=+match[3];}
+ else {
+  match=/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/.exec(v);
+  if(!match)throw new Error('Última Compra: use DD/MM/AAAA, DD/MM/AA ou AAAA-MM-DD.');
+  day=+match[1];month=+match[2];year=+match[3];
+ }
+ // Anos abreviados de compra pertencem a 2000–2099, inclusive 0026 vindo do Sheets.
+ if(year<100)year+=2000;
+ const date=new Date(Date.UTC(year,month-1,day));
+ if(year<1900||date.getUTCFullYear()!==year||date.getUTCMonth()!==month-1||date.getUTCDate()!==day)
+  throw new Error('Última Compra: data inválida.');
+ if(date.toISOString().slice(0,10)>new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Sao_Paulo'}).format(new Date()))throw new Error('Última Compra: a data não pode estar no futuro.');
+ return date.toISOString().slice(0,10);
+}
+function parseGrid(grid,issues=null){
  if(!Array.isArray(grid)||!grid.length)throw new Error('Planilha sem cabeçalhos.');
  const headerNames=grid[0].slice(0,16).map(h=>String(h).trim());
  headerNames[2]=headerNames[2]==='Camisa Preferida'?'Camisa Desejado Sorteio':headerNames[2];
@@ -17,7 +34,8 @@ function parseGrid(grid){
  return grid.slice(1).flatMap((cells,index)=>{
   if(!cells.some(v=>String(v??'').trim()))return [];
   const row=Object.fromEntries(HEADERS.map((h,i)=>[h,cells[i]??'']));
-  let normalized;try{normalized=normalizeRow(row)}catch(e){throw new Error(`Linha ${index+2}: ${e.message}`)}
+  try{
+  const normalized=normalizeRow(row);
   const allowedTypes={jogador:'Jogador',torcedor:'Torcedor',retro:'Retrô',feminina:'Feminina',nba:'NBA',infantil:'Infantil'};
   const shirt_types=[...new Set(String(row['Tipos de camisa']).split(/[;,\n]/).map(v=>v.trim()).filter(Boolean).map(v=>{const key=v.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();const canonical=allowedTypes[key];if(!canonical)throw new Error(`Linha ${index+2}: tipo de camisa inválido: ${v}. Use Jogador, Torcedor, Retrô, Feminina, NBA ou Infantil.`);return canonical;}))].sort();
   const value={shirt_types,...normalized.customer,archived:booleanValue(row['Excluído?'],'Excluído?')===true,has_referrals:booleanValue(row['Possui Indicações?'],'Possui Indicações?'),total_spent:numeric(row['Total Comprado']),order_count:numeric(row['Número de Pedidos'],true),last_purchase_at:purchaseDate(row['Última Compra']),teams:normalized.teams.sort()};delete value.last_update_source;
@@ -26,7 +44,19 @@ function parseGrid(grid){
   if(phones.has(value.phone))throw new Error(`Telefone duplicado na linha ${index+2}.`);phones.add(value.phone);
   if(id&&ids.has(id))throw new Error(`ID Cliente duplicado na linha ${index+2}.`);if(id)ids.add(id);
   return [{customer_id:id||null,row_number:index+2,value,cells}];
+  }catch(e){
+   if(!issues)throw new Error(`Linha ${index+2}: ${e.message}`);
+   const message=e.message;
+   const field=message.includes('Última Compra')?'Última Compra':/aniversário/i.test(message)?'Data de aniversário':/telefone/i.test(message)?'Telefone':/ID Cliente/.test(message)?'ID Cliente':/tipo de camisa/i.test(message)?'Tipos de camisa':/Nome Completo/.test(message)?'Nome Completo':HEADERS.find(h=>message.startsWith(h+':'))??'Cadastro';
+   issues.push({row_number:index+2,contact_name:row['Nome Completo'],field,value:field==='Cadastro'?null:String(row[field]??''),message});
+   return [];
+  }
  });
+}
+function validateGrid(grid){
+ const issues=[];
+ try{const rows=parseGrid(grid,issues);return {rows,issues,valid:issues.length===0};}
+ catch(e){return {rows:[],issues:[{row_number:1,contact_name:null,field:'Estrutura da planilha',value:null,message:e.message}],valid:false};}
 }
 function stable(value){if(Array.isArray(value))return JSON.stringify(value);if(value&&typeof value==='object')return JSON.stringify(Object.fromEntries(Object.keys(value).sort().map(k=>[k,value[k]])));return JSON.stringify(value);}
 function booleanCell(v){return v===null?'':v?'Sim':'Não';}
@@ -45,4 +75,4 @@ function guardedWrites(plan,grid){
  }
  return {run_id:plan.run_id,has_writes:data.length>0,body:{valueInputOption:'RAW',data},conflicts:plan.conflicts};
 }
-module.exports={HEADERS,parseGrid,guardedWrites,sheetCells};
+module.exports={HEADERS,parseGrid,validateGrid,guardedWrites,sheetCells};

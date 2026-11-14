@@ -1,0 +1,84 @@
+{
+  "name": "ATM — Alertas de erros no grupo",
+  "nodes": [
+    {
+      "id": "Erro de execução",
+      "name": "Erro de execução",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "parameters": {},
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "Preparar alerta",
+      "name": "Preparar alerta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const e=$input.first().json;const failure=e.execution?.error??e.trigger?.error??{};\n// Somente resumo operacional: nunca encaminhar o payload, stack, headers ou tokens.\nconst clean=value=>String(value??'Não informado').replace(/https?:\\/\\/[^\\s]+/g,'[URL omitida]').replace(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/gi,'[identificador omitido]').replace(/((?:token|authorization|apikey|api_key|password|secret)\\s*[:=]\\s*)[^\\s,;]+/gi,'$1[omitido]').slice(0,500);\nconst workflowId=String(e.workflow?.id??'');const executionId=String(e.execution?.id??'');\nconst url=/^[a-zA-Z0-9_-]+$/.test(workflowId)&&/^\\d+$/.test(executionId)?'https://n8n.automatizemais.com/workflow/'+workflowId+'/executions/'+executionId:'';\nreturn [{json:{text:['🚨 Erro na automação','Fluxo: '+clean(e.workflow?.name),'Nó: '+clean(e.execution?.lastNodeExecuted??failure.node?.name),'Erro: '+clean(failure.message??failure.cause?.message),'Horário: '+new Date().toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}),url,'Confira a execução antes de tentar reenviar mensagens.'].filter(Boolean).join('\\n')}}];"
+      },
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "id": "Enviar alerta ao grupo",
+      "name": "Enviar alerta ao grupo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://automatizemais.uazapi.com/send/text",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({number:\"120363432266870295@g.us\",text:$json.text,linkPreview:false}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "position": [
+        600,
+        0
+      ],
+      "notesInFlow": true,
+      "notes": "Usar credencial Header Auth exclusiva: Uazapi — Alertas (final 69fb). Header: token. Não selecionar a credencial FUTPB. O valor da credencial deve ser o token da instância remetente solicitada pelo dono."
+    }
+  ],
+  "connections": {
+    "Erro de execução": {
+      "main": [
+        [
+          {
+            "node": "Preparar alerta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar alerta": {
+      "main": [
+        [
+          {
+            "node": "Enviar alerta ao grupo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  }
+}
