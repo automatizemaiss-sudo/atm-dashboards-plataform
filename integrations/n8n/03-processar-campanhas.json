@@ -290,6 +290,19 @@
         1980,
         0
       ]
+    },
+    {
+      "id": "Explicar fila sem envio",
+      "name": "Explicar fila sem envio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const task=$input.first().json; if(task.blocked && task.notify!==false)throw new Error((task.message||'Fila bloqueada: confira a aba Campanhas.')+' Tentativa: '+task.dispatch_id); return [{json:{...task,status:task.blocked?'bloqueada':task.reason==='instance_busy'?'aguardando':'sem_envio_disponivel'}}];"
+      },
+      "position": [
+        880,
+        240
+      ]
     }
   ],
   "connections": {
@@ -342,6 +355,13 @@
         [
           {
             "node": "Aguardar intervalo da campanha",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Explicar fila sem envio",
             "type": "main",
             "index": 0
           }

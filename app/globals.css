@@ -7,3 +7,5 @@
 @media(max-width:680px){nav{grid-template-columns:repeat(5,minmax(0,1fr))}}
 
 .return-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin:16px 0}.return-card{display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:20px;gap:8px;white-space:normal}.return-card strong{font-size:2rem}.return-card[aria-expanded=true]{outline:2px solid var(--accent)}
+
+.delivery-alert{margin-bottom:20px}.delivery-alert h2{margin-top:0}.delivery-alert .rule-group{background:#fff;border-color:#b6593c;color:#3d2117}.delivery-alert small{overflow-wrap:anywhere}

@@ -162,15 +162,25 @@ test('planilha aceita NBA junto de outros interesses e tamanhos infantis',()=>{
  const v=parseGrid([HEADERS,cells])[0].value;assert.deepEqual(v.shirt_types,['Feminina','Infantil','NBA']);assert.equal(v.size,'Infantil 12');
 });
 
-test('validação registra erros de várias linhas e não permite importação parcial',()=>{
+test('validação isola linhas inválidas e permite sincronizar as demais',()=>{
  const a=[...row],b=[...row];a[13]='2099-12-06';b[1]='(83) 99999-2222';b[13]='31/02/20';
- const report=validateGrid([HEADERS,a,b]);assert.equal(report.valid,false);assert.equal(report.issues.length,2);
+ const report=validateGrid([HEADERS,a,b]);assert.equal(report.valid,false);assert.equal(report.can_sync,true);assert.equal(report.issues.length,2);
  assert.deepEqual(report.issues.map((i:any)=>[i.row_number,i.field]),[[2,'Última Compra'],[3,'Última Compra']]);
  assert.equal(report.issues[0].value,'2099-12-06');
  assert.equal(validateGrid([HEADERS,row,row]).valid,false);
  assert.equal(validateGrid([['Cabeçalho errado']]).issues[0].row_number,1);
  const flow=JSON.parse(readFileSync('integrations/n8n/02-sincronizacao-bidirecional.json','utf8'));
  assert.equal(flow.connections['Validar leitura'].main[0][0].node,'Registrar validação');
- assert.equal(flow.connections['Cadastro válido?'].main[1][0].node,'Exibir pendências');
- assert.equal(flow.connections['Cadastro válido?'].main[0][0].node,'Reconciliar no Supabase');
+ assert.equal(flow.connections['Estrutura válida?'].main[1][0].node,'Interromper estrutura inválida');
+ assert.equal(flow.connections['Estrutura válida?'].main[0][0].node,'Reconciliar no Supabase');
+});
+
+test('linhas inválidas preservam posição; todas as duplicadas ficam fora da escrita',()=>{
+ const a=[...row],bad=[...row],b=[...row];a[1]='(83) 99999-1111';bad[1]='(83) 99999-2222';bad[13]='2099-12-06';b[1]='(83) 99999-3333';
+ const report=validateGrid([HEADERS,a,bad,b]);assert.equal(report.rows.length,2);assert.equal(report.issues[0].phone,'+5583999992222');
+ const plan={run_id:'test',writes:report.rows.map((r:any,i:number)=>({customer_id:`11111111-1111-1111-1111-11111111111${i}`,expected:r.value,value:r.value,version:1})),conflicts:[]};
+ assert.deepEqual(guardedWrites(plan,[HEADERS,a,bad,b]).body.data.map((d:any)=>d.range),["'Página1'!A2:P2","'Página1'!A4:P4"]);
+ const duplicate=validateGrid([HEADERS,a,[...a],b]);assert.equal(duplicate.rows.length,1);assert.deepEqual(duplicate.issues.map((i:any)=>i.row_number),[2,3]);
+ // A contact becoming invalid after planning must not receive an ACK for a stale baseline.
+ const changed=[...a];changed[13]='2099-12-06';assert.throws(()=>guardedWrites(plan,[HEADERS,changed,bad,b]),/ficou inválido/);
 });
