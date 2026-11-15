@@ -40,3 +40,9 @@ O pacote usa polling para não alterar o webhook de produção existente. Webhoo
 POST /instance/connect inicia o pareamento: sem phone, QR Code; com phone, código de pareamento. O usuário ainda precisa autorizar no WhatsApp. Um logout com 401 não deve ser tratado como uma simples falha temporária de rede. Não automatizar tentativas de envio ou reconexões em loop.
 
 Fontes: https://docs.n8n.io/flow-logic/error-handling/ · https://docs.uazapi.com/docs/getting-started · https://docs.uazapi.com/webhook/connection
+
+## Aviso no dashboard
+
+Aplique `supabase/migrations/021_whatsapp_connection.sql` e atualize o workflow 07 a partir do JSON deste repositório. No nó **Salvar conexão no dashboard**, selecione a credencial privada Supabase já usada pelos outros workflows. Configure a variável n8n `ATM_WHATSAPP_INSTANCE_ID` com o UUID da linha em `public.whatsapp_instances` correspondente exatamente à credencial usada em **Consultar instância monitorada** (não o ID da Uazapi). Marque essa instância como habilitada no cadastro se ela estiver em uso.
+
+O monitor grava cada consulta, inclusive `connected`, independentemente do intervalo do alerta no grupo. O dashboard consulta a cada 15 segundos e mostra um aviso no topo de todas as abas para instâncias habilitadas desconectadas, conectando ou hibernadas. O aviso some após uma confirmação recente de conexão. Sem consulta há mais de três minutos, ou sem registro, mostra conexão sem verificação recente. Falhas de leitura também são exibidas. Nenhum token da Uazapi é enviado ao navegador; somente a credencial de serviço pode registrar o status. Confira uma desconexão e uma reconexão após publicar o fluxo.

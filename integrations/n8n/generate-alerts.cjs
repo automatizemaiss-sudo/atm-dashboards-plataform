@@ -20,6 +20,7 @@ return [{json:{text:['🚨 Erro na automação','Fluxo: '+clean(e.workflow?.name
 write('07-monitorar-conexao.json','ATM — Monitorar conexão WhatsApp',[
  node('A cada minuto','scheduleTrigger',{rule:{interval:[{field:'minutes',minutesInterval:1}]}},0),
  node('Consultar instância monitorada','httpRequest',{method:'GET',url:base+'/instance/status',authentication:'genericCredentialType',genericAuthType:'httpHeaderAuth',options:{timeout:15000}},200),
+ {...node('Salvar conexão no dashboard','httpRequest',{method:'POST',url:'https://wlhugaduwhevmoymyhad.supabase.co/rest/v1/rpc/record_whatsapp_connection',authentication:'predefinedCredentialType',nodeCredentialType:'supabaseApi',sendBody:true,specifyBody:'json',jsonBody: `={{ JSON.stringify({instance:$vars.ATM_WHATSAPP_INSTANCE_ID,connection_status:String($json.instance?.status??$json.status??'').toLowerCase()}) }}`,options:{timeout:15000}},400),notesInFlow:true,notes:'Selecionar credencial privada Supabase. Configurar ATM_WHATSAPP_INSTANCE_ID com o UUID da instância monitorada em whatsapp_instances.'},
  node('Verificar conexão','code',{jsCode:`const data=$input.first().json;const status=String(data.instance?.status??data.status??'').toLowerCase();
 if(!['connected','disconnected','connecting','hibernated'].includes(status))throw new Error('Resposta de status não reconhecida; revisar contrato da Uazapi');
 const state=$getWorkflowStaticData('global');
@@ -27,4 +28,4 @@ if(status==='connected'){state.lastAlertAt=0;return [];}
 if(Date.now()-(state.lastAlertAt??0)<15*60*1000)return [];
 return [{json:{text:'⚠️ WhatsApp sem conexão pronta para envio\\nEstado: '+status+'\\nHorário: '+new Date().toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})+'\\nConfira a instância monitorada no painel Uazapi. Os disparos podem estar interrompidos.'}}];`},400),send(),
  node('Registrar alerta enviado','code',{jsCode:`if(!$input.first().json.messageid || $input.first().json.error)throw new Error('Uazapi não confirmou a aceitação do alerta');const state=$getWorkflowStaticData('global');state.lastAlertAt=Date.now();return $input.all();`},800)
-],{...edge('A cada minuto','Consultar instância monitorada'),...edge('Consultar instância monitorada','Verificar conexão'),...edge('Verificar conexão','Enviar alerta ao grupo'),...edge('Enviar alerta ao grupo','Registrar alerta enviado')});
+],{...edge('A cada minuto','Consultar instância monitorada'),'Consultar instância monitorada':{main:[[{node:'Verificar conexão',type:'main',index:0},{node:'Salvar conexão no dashboard',type:'main',index:0}]]},...edge('Verificar conexão','Enviar alerta ao grupo'),...edge('Enviar alerta ao grupo','Registrar alerta enviado')});

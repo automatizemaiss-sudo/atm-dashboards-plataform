@@ -41,6 +41,30 @@
       ]
     },
     {
+      "id": "Salvar conexão no dashboard",
+      "name": "Salvar conexão no dashboard",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "parameters": {
+        "method": "POST",
+        "url": "https://wlhugaduwhevmoymyhad.supabase.co/rest/v1/rpc/record_whatsapp_connection",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({instance:$vars.ATM_WHATSAPP_INSTANCE_ID,connection_status:String($json.instance?.status??$json.status??'').toLowerCase()}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "position": [
+        400,
+        0
+      ],
+      "notesInFlow": true,
+      "notes": "Selecionar credencial privada Supabase. Configurar ATM_WHATSAPP_INSTANCE_ID com o UUID da instância monitorada em whatsapp_instances."
+    },
+    {
       "id": "Verificar conexão",
       "name": "Verificar conexão",
       "type": "n8n-nodes-base.code",
@@ -108,6 +132,11 @@
         [
           {
             "node": "Verificar conexão",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Salvar conexão no dashboard",
             "type": "main",
             "index": 0
           }
