@@ -52,3 +52,19 @@ SQL e lógica verificados localmente. Os JSONs precisam ser importados e testado
 ## Intervalos e exclusão (migração 011)
 
 O fluxo atualizado consulta a cada cinco segundos e usa Wait para respeitar o intervalo aleatório definido por campanha. Substitui a cadência antiga de uma mensagem a cada 30 segundos. Ativação e semântica dos status em docs/CAMPANHAS-INTERVALO-EXCLUSAO.md.
+
+## Conexão pelo dashboard
+
+A aba **Conexão WhatsApp** permite consultar o estado, iniciar/reiniciar a conexão e escanear o QR Code. O alerta de desconexão tem um atalho para essa aba. A tela consulta o status a cada cinco segundos enquanto aberta, incluindo QR atualizado; não repete o POST de conexão durante um pareamento em andamento.
+
+Configuração única no servidor Next.js (local: `.env.local`; produção: variáveis do projeto na Vercel):
+
+- `UAZAPI_INSTANCES`: JSON no formato `{"UUID_DA_INSTANCIA_NO_SUPABASE":{"url":"https://SEU_SERVIDOR.uazapi.com","token":"TOKEN_DA_INSTANCIA"}}`. Use o UUID de `whatsapp_instances.id` do dashboard e o mesmo servidor/token da credencial de campanhas no n8n. Pode conter várias instâncias. Não usar `NEXT_PUBLIC_` nem token administrativo.
+- `SUPABASE_SERVICE_ROLE_KEY`: chave privada já usada pelo cadastro público, para registrar a consulta no monitoramento existente. A migração `021_whatsapp_connection.sql` precisa estar aplicada para esse registro. Falhas ao persistir o monitoramento são informadas separadamente da conexão real.
+- Mantenha as duas variáveis públicas Supabase já existentes e reinicie o servidor/republique após configurar.
+
+O endpoint `/api/whatsapp` valida o usuário no Supabase e verifica acesso à instância por RLS antes de selecionar qualquer credencial. Somente status, QR PNG, telefone e horário são devolvidos ao navegador; respostas não são armazenadas em cache. URLs e tokens vêm exclusivamente da configuração privada. Não é necessária nova migração.
+
+Conectar não altera `enabled`, filas, webhooks ou credenciais no n8n. Instâncias desabilitadas continuam sem envios. A instância deve existir previamente na Uazapi e em `whatsapp_instances`.
+
+Contrato consultado para esta tela: [OpenAPI Uazapi 2.6.9](https://docs.uazapi.com/openapi-bundled.json), operações `GET /instance/status` e `POST /instance/connect`.
