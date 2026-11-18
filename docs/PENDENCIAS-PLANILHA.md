@@ -7,7 +7,8 @@
 3. Atualize o workflow de sincronização com `integrations/n8n/02-sincronizacao-bidirecional.json`. Preserve as credenciais e configurações da sua instância. O arquivo é entregue inativo. Desative o workflow anterior para evitar sincronizações paralelas.
 4. Selecione a credencial privada Supabase também no novo nó **Registrar validação**. Esse nó chama `sheet_sync_report_validation`; a chave privada continua somente no credential store do n8n.
 5. Execute pelo trigger **Teste manual**. O workflow registra as linhas inválidas e segue com as válidas até **Confirmar sincronização**. O resultado final traz `status=done`, `synced` (contatos sincronizados) e `skipped` (linhas que ficaram em pendências). A reserva fica ativa durante essa execução e é concluída no final. Somente problemas que impedem uma leitura confiável da planilha, como cabeçalhos incorretos ou limite excedido, interrompem o fluxo em **Interromper estrutura inválida** e liberam a reserva. A aba mostra as pendências após **Atualizar**. Faça essa leitura antes de retomar os envios para identificar os contatos com erro.
-6. Corrija os valores na planilha. Execute novamente: a nova validação encerra as pendências corrigidas e a sincronização prossegue. Teste com um contato antes de ativar o agendamento.
+6. Para habilitar a correção no dashboard, aplique a migration `023_sheet_repairs.sql` após a 022. Importe a versão atualizada do workflow 02 e configure as credenciais dos novos nós de Supabase e Google Sheets. Mantenha uma única versão ativa do workflow.
+7. Execute o workflow uma vez para capturar os dados das pendências existentes. No dashboard, abra **Pendências da planilha → Corrigir no dashboard**, salve a correção e execute o workflow novamente. Confira a célula no Sheets, o cadastro no dashboard e o encerramento da pendência antes de ativar o agendamento.
 
 ## Comportamento
 
@@ -17,7 +18,7 @@
 - Antes de autorizar um envio, o worker confere nome, telefone, aniversário e última compra do contato e do snapshot, além das pendências abertas da planilha por UUID ou telefone. Se encontrar erro de cadastro, não envia para esse destinatário, registra o motivo na campanha e permite que a fila siga para os outros destinatários. A campanha mostra **Enviar para Pendências da planilha**.
 - Erros já registrados pelo provedor ficam visíveis na campanha. A pessoa responsável pode classificá-los como erro de cadastro e encaminhá-los. Isso não modifica um envio em andamento ou com resultado incerto: o estado de envio é preservado para evitar duplicatas.
 - Nas pendências de campanha, **Editar cadastro** abre o contato. **Validar correção e resolver** confere os dados salvos e encerra a pendência. O snapshot original e o histórico são preservados; o contato não é reenviado automaticamente na campanha original. Se o erro estava somente no snapshot antigo, o cadastro atual pode já estar correto.
-- Erros da planilha são resolvidos por uma nova leitura, não por um botão que ignora a validação. Nenhum registro é apagado ao resolver; a fila mostra somente os abertos.
+- Em **Corrigir no dashboard**, o usuário edita os campos da linha. O workflow usa a reserva da sincronização existente, confere se as células ainda correspondem à versão exibida e grava somente os campos alterados. Em caso de duplicidade, é possível confirmar o descarte da linha redundante. O workflow confere se ainda há outra ocorrência e limpa as células A:P da linha selecionada, sem excluir o contato do Supabase. A validação seguinte encerra a pendência se o cadastro estiver correto. Problemas de configuração, como cabeçalhos incorretos ou limite de leitura, seguem para a equipe da integração.
 
 ## Validação local
 

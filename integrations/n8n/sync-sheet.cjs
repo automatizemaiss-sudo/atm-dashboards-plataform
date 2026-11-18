@@ -62,7 +62,7 @@ function parseGrid(grid,issues=null){
    if(!issues)throw new Error(`Linha ${index+2}: ${e.message}`);
    const message=e.message;
    const field=message.includes('Última Compra')?'Última Compra':/aniversário/i.test(message)?'Data de aniversário':/telefone/i.test(message)?'Telefone':/ID Cliente/.test(message)?'ID Cliente':/tipo de camisa/i.test(message)?'Tipos de camisa':/Nome Completo/.test(message)?'Nome Completo':HEADERS.find(h=>message.startsWith(h+':'))??'Cadastro';
-   issues.push({row_number:index+2,contact_name:row['Nome Completo'],...identity,field,value:field==='Cadastro'?null:String(row[field]??''),message});
+   issues.push({cells:repairCells(cells),row_number:index+2,contact_name:row['Nome Completo'],...identity,field,value:field==='Cadastro'?null:String(row[field]??''),message});
    return [];
   }
  });
@@ -96,4 +96,65 @@ function guardedWrites(plan,grid){
  }
  return {run_id:plan.run_id,has_writes:data.length>0,body:{valueInputOption:'RAW',data},conflicts:plan.conflicts};
 }
-module.exports={HEADERS,parseGrid,validateGrid,guardedWrites,sheetCells};
+function repairCells(cells){
+ return HEADERS.map((_,index)=>String(cells?.[index]??''));
+}
+
+function hasDuplicate(grid,index,repair){
+ const current=rowIdentity(grid[index]);
+ const matchesContact=identity=>identity.customer_id
+  ? identity.customer_id.toLowerCase()===repair.matched_id
+  : Boolean(identity.phone&&identity.phone===repair.matched_phone);
+ return grid.some((cells,otherIndex)=>{
+  if(otherIndex===0||otherIndex===index||!cells)return false;
+  const other=rowIdentity(cells);
+  return (current.phone&&current.phone===other.phone)
+   || (current.customer_id&&current.customer_id.toLowerCase()===other.customer_id?.toLowerCase())
+   || (matchesContact(current)&&matchesContact(other));
+ });
+}
+
+function prepareSheetRepairs(grid,repairs){
+ const original=validateGrid(grid);
+ const data=[],results=[];
+ if(!original.can_sync)return {data,results};
+ const projected=grid.slice();
+ for(const repair of repairs){
+  const index=repair.row_number-1;
+  const current=repairCells(projected[index]);
+  const corrected=repair.discard?repairCells([]):repair.expected.slice();
+  for(const [column,value] of Object.entries(repair.changes))corrected[Number(column)]=value;
+  const result={issue_id:repair.issue_id,status:'applied',message:null};
+  results.push(result);
+  if(stable(current)===stable(corrected))continue;
+  if(stable(current)!==stable(repair.expected)){
+   result.status='rejected';
+   result.message='A linha mudou desde a solicitação. Atualize as pendências e confira os dados.';
+   continue;
+  }
+  if(repair.discard&&!hasDuplicate(projected,index,repair)){
+   result.status='rejected';
+   result.message='A linha já não aparece em duplicidade. Confira as pendências atualizadas.';
+   continue;
+  }
+  projected[index]=corrected;
+  const issue=repair.discard?null:validateGrid(projected).issues.find(issue=>issue.row_number===repair.row_number);
+  if(issue){
+   projected[index]=current;
+   result.status='rejected';
+   result.message=issue.message;
+   continue;
+  }
+  const row=repair.row_number;
+  if(repair.discard){
+   data.push({range:`'Página1'!A${row}:P${row}`,values:[corrected]});
+   continue;
+  }
+  for(const [column,value] of Object.entries(repair.changes)){
+   const letter=String.fromCharCode(65+Number(column));
+   data.push({range:`'Página1'!${letter}${row}`,values:[[value]]});
+  }
+ }
+ return {data,results};
+}
+module.exports={HEADERS,parseGrid,validateGrid,guardedWrites,sheetCells,repairCells,prepareSheetRepairs};

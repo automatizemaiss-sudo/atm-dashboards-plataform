@@ -25,3 +25,6 @@
 .campaign-delivery{margin-bottom:18px}
 .campaign-delivery summary{cursor:pointer;color:#a12724;font-weight:600}
 .campaign-delivery small{overflow-wrap:anywhere}
+
+.sheet-repair-form{margin-top:16px}
+.sheet-repair-form .toolbar{justify-content:flex-start;flex-wrap:wrap;margin-bottom:0}

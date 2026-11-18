@@ -8,7 +8,7 @@ const validator=require('../integrations/n8n/validate-sheet.cjs');
 const syncSource=readFileSync('integrations/n8n/sync-sheet.cjs','utf8');
 const moduleObject:{exports:any}={exports:{}};
 new Function('module','normalizeRow','booleanValue','birthdayValue',syncSource)(moduleObject,validator.normalizeRow,(value:any)=>value===''||value==null?null:['sim','true'].includes(String(value).toLowerCase()),validator.birthdayValue);
-const {HEADERS,parseGrid,validateGrid,guardedWrites}=moduleObject.exports;
+const {HEADERS,parseGrid,validateGrid,guardedWrites,repairCells,prepareSheetRepairs}=moduleObject.exports;
 const row=['Teste','(83) 99999-1111','Barcelona Home','Corinthians; Barcelona','G','15/04/1990','Sim','Sim','','','','','',''];
 test('última compra aceita ano abreviado sem flexibilizar aniversário',()=>{
  const purchase=(date:string)=>{const cells=[...row];cells[13]=date;return parseGrid([HEADERS,cells])[0].value.last_purchase_at;};
@@ -183,4 +183,31 @@ test('linhas inválidas preservam posição; todas as duplicadas ficam fora da e
  const duplicate=validateGrid([HEADERS,a,[...a],b]);assert.equal(duplicate.rows.length,1);assert.deepEqual(duplicate.issues.map((i:any)=>i.row_number),[2,3]);
  // A contact becoming invalid after planning must not receive an ACK for a stale baseline.
  const changed=[...a];changed[13]='2099-12-06';assert.throws(()=>guardedWrites(plan,[HEADERS,changed,bad,b]),/ficou inválido/);
+});
+
+
+test('correções escrevem só a célula alterada, recusam linhas que mudaram e são idempotentes',()=>{
+ const invalid=[...row];invalid[13]='2099-12-06';
+ const job={issue_id:'repair',row_number:2,expected:repairCells(invalid),changes:{13:'2020-04-15'},discard:false};
+ const planned=prepareSheetRepairs([HEADERS,invalid],[job]);
+ assert.deepEqual(planned.data,[{range:"'Página1'!N2",values:[['2020-04-15']]}]);
+ assert.equal(planned.results[0].status,'applied');
+ const corrected=[...invalid];corrected[13]='2020-04-15';
+ assert.deepEqual(prepareSheetRepairs([HEADERS,corrected],[job]),{data:[],results:planned.results});
+ const moved=[...invalid];moved[0]='Outro contato';
+ const stale=prepareSheetRepairs([HEADERS,moved,invalid],[job]);
+ assert.deepEqual(stale.data,[]);
+ assert.equal(stale.results[0].status,'rejected');
+ const stillInvalid=prepareSheetRepairs([HEADERS,invalid],[{...job,changes:{13:'31/02/2020'}}]);
+ assert.deepEqual(stillInvalid.data,[]);
+ assert.equal(stillInvalid.results[0].status,'rejected');
+});
+
+test('descarte de duplicata preserva uma ocorrência mesmo com duas solicitações',()=>{
+ const job={issue_id:'first',row_number:2,expected:repairCells(row),changes:{},discard:true};
+ const jobs=[job,{...job,issue_id:'second',row_number:3}];
+ const plan=prepareSheetRepairs([HEADERS,row,row],jobs);
+ assert.deepEqual(plan.data,[{range:"'Página1'!A2:P2",values:[repairCells([])]}]);
+ assert.deepEqual(plan.results.map((result:{status:string})=>result.status),['applied','rejected']);
+ assert.deepEqual(prepareSheetRepairs([HEADERS,row],[job]).data,[]);
 });
