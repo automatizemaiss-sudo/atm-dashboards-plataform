@@ -28,3 +28,7 @@
 
 .sheet-repair-form{margin-top:16px}
 .sheet-repair-form .toolbar{justify-content:flex-start;flex-wrap:wrap;margin-bottom:0}
+
+nav .nav-registration-errors{font-size:13px;white-space:nowrap}
+@media(max-width:680px){nav .nav-registration-errors{font-size:9px}}
+@media(max-width:450px){nav .nav-registration-errors{grid-column:span 2}}
